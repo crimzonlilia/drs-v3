@@ -1,0 +1,16 @@
+openrouter:
+  base_url: "https://openrouter.ai/api/v1"
+  referer: "https://github.com/drs-v3"
+  title: "DRS v3"
+
+models:
+  generator: "openrouter/owl-alpha"
+  reviewer: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+
+generation:
+  max_tokens: 2048
+  temperature: 0.3
+
+review:
+  max_tokens: 1024
+  temperature: 0.2

@@ -1,0 +1,9 @@
+- source_term: 先輩
+  target_term: DRS_TEST_777
+  source_lang: ja
+  target_lang: vi
+  content_type: manga
+  context_note: ''
+  approved_at: '2026-06-03T15:24:23'
+  approved_by: human
+  usage_count: 0

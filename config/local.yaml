@@ -1,0 +1,5 @@
+models:
+  generator: "anthropic/claude-sonnet-4"
+
+generation:
+  temperature: 0.5

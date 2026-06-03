@@ -1,0 +1,13 @@
+- entity_id: luffy
+  canonical_name: Luffy
+  source_name: ルフィ
+  entity_type: character
+  source_lang: ja
+  target_lang: vi
+  pronouns: cậu
+  aliases: []
+  notes: ''
+  content_type: general
+  approved_at: '2026-06-03T12:04:45'
+  approved_by: human
+  mention_count: 0
