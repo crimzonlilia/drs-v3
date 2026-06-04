@@ -33,7 +33,9 @@ class ReviewResult:
     completion_tokens: int = 0
 
 
-SYSTEM_TEMPLATE = """\
+from core.utils.prompt_loader import load_prompt_template
+
+DEFAULT_SYSTEM_TEMPLATE = """\
 You are a senior localization reviewer.
 You will receive a translation draft and a list of issues found by automated checks.
 
@@ -62,7 +64,7 @@ REMAINING_ISSUES:
 <"none" or a brief list of issues you could not resolve and need human judgment>
 """
 
-USER_TEMPLATE = """\
+DEFAULT_USER_TEMPLATE = """\
 ORIGINAL SOURCE:
 {source_text}
 
@@ -106,24 +108,20 @@ class Reviewer:
         target_lang: str,
         content_type: str = "general",
     ) -> ReviewResult:
-        # If no issues at all, skip the LLM call — return draft as-is
-        if not check_report.has_issues:
-            return ReviewResult(
-                revised_draft=draft,
-                review_note="No issues found. Draft passed all checks.",
-                model=self.model,
-                has_remaining_issues=False,
-            )
+
 
         memory_context = self.memory.build_prompt_context(source_lang, target_lang)
-        system_prompt = SYSTEM_TEMPLATE.format(
+        system_tmpl = load_prompt_template("reviewer_system", content_type, DEFAULT_SYSTEM_TEMPLATE)
+        user_tmpl = load_prompt_template("reviewer_user", content_type, DEFAULT_USER_TEMPLATE)
+
+        system_prompt = system_tmpl.format(
             source_lang=source_lang,
             target_lang=target_lang,
             content_type=content_type,
             memory_context=memory_context or "(No approved memory yet)",
         )
 
-        user_prompt = USER_TEMPLATE.format(
+        user_prompt = user_tmpl.format(
             source_text=source_text,
             draft=draft,
             check_report=check_report.summary(),

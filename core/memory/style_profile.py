@@ -102,7 +102,11 @@ class StyleMemory:
     def add_rule(self, rule: StyleRule) -> None:
         """Add or replace a rule by rule_id. Human approval expected before calling."""
         if not self._profile:
-            raise RuntimeError("Profile not initialized. Call init_profile first.")
+            self.init_profile(
+                source_lang=rule.source_lang or "ja",
+                target_lang=rule.target_lang or "vi",
+                content_type=rule.content_type or "general"
+            )
         self._profile.rules = [r for r in self._profile.rules if r.rule_id != rule.rule_id]
         self._profile.rules.append(rule)
         self.save()
@@ -119,9 +123,15 @@ class StyleMemory:
 
     def update_tone_note(self, note: str) -> None:
         if not self._profile:
-            raise RuntimeError("Profile not initialized.")
-        self._profile.tone_note = note
-        self.save()
+            self.init_profile(
+                source_lang="ja",
+                target_lang="vi",
+                content_type="general",
+                tone_note=note
+            )
+        else:
+            self._profile.tone_note = note
+            self.save()
 
     # ------------------------------------------------------------------ #
     # Read                                                                 #

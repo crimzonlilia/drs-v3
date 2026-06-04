@@ -106,11 +106,10 @@ class ApprovalGate:
         session: ApprovalSession,
         final_text: str,
         corrections: list[Correction] | None = None,
+        auto_promote: bool = True,
     ) -> PromotionResult:
         """
-        Human approved — finalize and log corrections.
-        Corrections go to correction_log (pending), not directly to memory.
-        Human must separately promote corrections to glossary/style/entities.
+        Human approved — finalize, log, and optionally auto-promote corrections.
         """
         session.decision = Decision.APPROVED if final_text == session.draft else Decision.EDITED
         session.final_text = final_text
@@ -120,9 +119,48 @@ class ApprovalGate:
 
         if corrections:
             for c in corrections:
+                # Log the correction first
                 self.memory.corrections.log(c)
                 session.corrections.append(c)
-            result.promoted_corrections = len(corrections)
+                result.promoted_corrections += 1
+                
+                if auto_promote:
+                    if c.correction_type == CorrectionType.TERMINOLOGY:
+                        entry = GlossaryEntry(
+                            source_term=c.source_term,
+                            target_term=c.corrected_text,
+                            source_lang=c.source_lang,
+                            target_lang=c.target_lang,
+                            content_type="general",
+                            context_note=c.note or "Auto-promoted from UI review",
+                        )
+                        self.memory.glossary.add_entry(entry)
+                        self.memory.corrections.promote(c.correction_id, "glossary")
+                        result.promoted_glossary += 1
+                    elif c.correction_type == CorrectionType.ENTITY:
+                        entity = Entity(
+                            entity_id=c.correction_id,
+                            canonical_name=c.corrected_text,
+                            source_name=c.source_term or c.original_text,
+                            entity_type="character",
+                            source_lang=c.source_lang,
+                            target_lang=c.target_lang,
+                        )
+                        self.memory.entities.add_entity(entity)
+                        self.memory.corrections.promote(c.correction_id, "entity")
+                        result.promoted_entities += 1
+                    elif c.correction_type == CorrectionType.STYLE:
+                        if self.memory.style.profile:
+                            rule = StyleRule(
+                                rule_id=c.correction_id,
+                                category="general",
+                                description=c.note or f"Translate '{c.original_text}' as '{c.corrected_text}'",
+                                example_before=c.original_text,
+                                example_after=c.corrected_text,
+                            )
+                            self.memory.style.add_rule(rule)
+                            self.memory.corrections.promote(c.correction_id, "style")
+                            result.promoted_style += 1
 
         return result
 
@@ -135,6 +173,10 @@ class ApprovalGate:
     # Memory promotion (explicit — always human-triggered)                #
     # ------------------------------------------------------------------ #
 
+    def _is_pending(self, correction_id: str) -> bool:
+        existing = next((c for c in self.memory.corrections._corrections if c.correction_id == correction_id), None)
+        return existing is not None and existing.status == "pending"
+
     def promote_correction_to_glossary(
         self,
         correction_id: str,
@@ -146,6 +188,8 @@ class ApprovalGate:
         context_note: str = "",
     ) -> bool:
         """Promote a logged correction into the approved glossary."""
+        if not self._is_pending(correction_id):
+            return False
         entry = GlossaryEntry(
             source_term=source_term,
             target_term=target_term,
@@ -164,6 +208,8 @@ class ApprovalGate:
         entity: Entity,
     ) -> bool:
         """Promote a logged correction into the entity registry."""
+        if not self._is_pending(correction_id):
+            return False
         self.memory.entities.add_entity(entity)
         self.memory.corrections.promote(correction_id, "entity")
         return True
@@ -174,6 +220,8 @@ class ApprovalGate:
         rule: StyleRule,
     ) -> bool:
         """Promote a logged correction into the style profile."""
+        if not self._is_pending(correction_id):
+            return False
         if not self.memory.style.profile:
             raise RuntimeError("Style profile not initialized for this project.")
         self.memory.style.add_rule(rule)

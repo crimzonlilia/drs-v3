@@ -1,0 +1,2 @@
+- Since this is mythology/legend, use an epic, archaic, or classical literary tone.
+- Pay attention to divine titles, sacred names, and poetic prose.

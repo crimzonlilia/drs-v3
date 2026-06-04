@@ -1,5 +1,5 @@
 models:
-  generator: "anthropic/claude-sonnet-4"
+  generator: "openrouter/owl-alpha"
 
 generation:
   temperature: 0.5

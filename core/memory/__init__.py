@@ -27,8 +27,15 @@ class ProjectMemory:
     mem.corrections → CorrectionLog
     """
 
-    def __init__(self, project_id: str, store_root: str = "memory_store"):
+    def __init__(self, project_id: str, store_root: str | None = None):
         self.project_id = project_id
+        if store_root is None:
+            from pathlib import Path
+            if (Path("projects") / project_id).exists():
+                store_root = f"projects/{project_id}/memory"
+            else:
+                store_root = "memory_store"
+                
         self.glossary = Glossary(project_id, f"{store_root}/glossaries")
         self.style = StyleMemory(project_id, f"{store_root}/styles")
         self.entities = EntityRegistry(project_id, f"{store_root}/entities")

@@ -1,0 +1,2 @@
+- Since this is scientific/technical text, use precise, clear terminology.
+- Avoid flowery language and maintain absolute factual accuracy.

@@ -1,0 +1,2 @@
+- Since this is a historical document, maintain a formal, objective, academic tone.
+- Respect traditional name formats, historical titles, and geographical spelling conventions.

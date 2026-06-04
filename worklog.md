@@ -1,81 +1,51 @@
-# DRS-v3 Backend Checkpoint (2026-06-03)
+# DRS-v3 Backend Checkpoint & Worklog
 
-## Current Status
+This file is excluded from Git tracking (`.gitignore`) to keep local project progress private between developer and assistant.
 
-Backend MVP is functional.
+## Current Status (2026-06-04)
 
-Implemented core loop:
+- **Backend Architecture**: Fully ready for REST API-first operations.
+- **REST API**: Modularized FastAPI server under `server/` mounted with dedicated routers.
+- **Security**: Added robust token-based authentication (Register, Login, Logout) using NIST-standard PBKDF2-SHA256 password hashing and dependency-free HS256 JWT signatures.
+- **Layout Translation & OCR**: Renamed and generalized the visual translation pipeline from "manga" to a generic academic layout and screenshot translator (`LayoutTranslator` and `ImageRenderer`).
+- **Git Safety**: Ignores `projects/`, `memory_store/`, `workspace/`, and `worklog.md` to prevent accidental data leaks.
 
-Human feedback
-→ correction log (pending)
-→ promotion / approval
-→ approved glossary memory
-→ retrieval
-→ memory-steered generation
-
-This confirms DRS as an approval-gated editorial memory system rather than a simple translation pipeline.
+---
 
 ## Completed Components
 
-✓ Generation pipeline
-✓ Consistency checks
-✓ Human review routing
-✓ Correction logging (YAML persistence)
-✓ Pending / promoted memory states
-✓ Promotion workflow
-✓ Self-healing correction deduplication
-✓ Approved glossary memory
-✓ Memory retrieval
-✓ Memory-conditioned generation
+### 1. Unified Interface Layer
+- `interfaces/cli.py`: Dedicated CLI manager for running and managing projects locally.
+- `interfaces/api.py`: Thin gateway shortcut importing the FastAPI application.
 
-## Key Verification
+### 2. REST API Gateway (`server/`)
+- `server/main.py`: Entrypoint setting up CORS and routing middlewares.
+- `server/schemas.py`: Pydantic schemas for data serialization and API validation.
+- `server/auth.py`: Cryptographic helpers for token validation and salted password hashing.
+- `server/routers/`:
+  - `auth.py`: Account endpoints (`/register`, `/login`, `/logout-token`, `/me`).
+  - `projects.py`: Metadata settings (`POST /api/projects`, `GET /api/projects/{id}`).
+  - `translation.py`: Asynchronous translation engine and approval routing (`/translate`, `/approve`).
+  - `memory.py`: Read/write dictionary and trigger background FandomResearcher tasks (`/seed`).
 
-Baseline (no glossary):
+### 3. Layout Translation & OCR
+- `core/agents/layout_translator.py`: Multimodal agent for OCR panel alignment and region text extraction.
+- `core/workflow/image_renderer.py`: Rendered page editor for font and typesetting masks.
 
-```txt
-こんにちは先輩
-→ Chào anh/chị senpai
-```
+### 4. Git Security & Local Privacy
+- Updated `.gitignore` to strictly exclude:
+  - `projects/` and `memory_store/` (local dictionary files)
+  - `workspace/` (sessions and temporary files)
+  - `worklog.md` (private project log)
+  - `agent.md` (private assistant guidelines)
+- Ran `git rm --cached worklog.md` to remove tracking from previous commits while maintaining the file locally.
+- Created `agent.md` to store secret developer preferences and custom translation prompts without exposing them online.
 
-Controlled memory test:
+---
 
-```txt
-先輩 → DRS_TEST_777
-```
+## Cloud Deployment Roadmap (Free-Tier Stack)
 
-Output:
+1. **Database**: Use a free serverless PostgreSQL instance from **Neon.tech** or **Supabase**.
+2. **Backend Services**: Deploy the FastAPI server to **Hugging Face Spaces** (Docker SDK) for 24/7 free hosting without sleeping or cold starts.
+3. **Frontend UI**: Deploy the Next.js frontend to **Vercel** (free vĩnh viễn).
 
-```txt
-→ Xin chào DRS_TEST_777
-```
-
-Verified:
-
-Approved memory is retrieved and actively steers generation.
-
-## Next Backend Priorities
-
-1. Memory transparency / retrieval trace
-
-Example:
-
-```txt
-Memory hits:
-- glossary: 先輩 → DRS_TEST_777
-```
-
-2. Promotion helper
-
-Simplify:
-
-```txt
-pending correction
-→ promote_to_glossary()
-→ glossary update
-```
-
-UI not started yet.
-
-Recommended direction:
-
-Thin demo workspace UI showing source, draft, memory hits, and approval flow.

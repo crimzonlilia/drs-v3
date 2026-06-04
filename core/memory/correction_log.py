@@ -41,6 +41,7 @@ class Correction:
     correction_type: CorrectionType
     original_text: str            # what the AI produced
     corrected_text: str           # what the human changed it to
+    source_term: str = ""         # the original term in source text
     context_snippet: str = ""     # surrounding sentence for context
     note: str = ""                # human's optional comment
     status: CorrectionStatus = CorrectionStatus.PENDING
@@ -138,6 +139,22 @@ class CorrectionLog:
                 self._corrections[i] = correction
                 self.save()
                 return
+
+        # Avoid duplicate pending corrections for the same term/text.
+        if correction.status == CorrectionStatus.PENDING:
+            for i, c in enumerate(self._corrections):
+                if c.status == CorrectionStatus.PENDING:
+                    # If both have a non-empty source_term and they match
+                    if c.source_term and correction.source_term and c.source_term == correction.source_term:
+                        self._corrections[i] = correction
+                        self.save()
+                        return
+                    # Or if source_term is empty but original_text matches
+                    elif not c.source_term and not correction.source_term and c.original_text == correction.original_text:
+                        self._corrections[i] = correction
+                        self.save()
+                        return
+
         self._corrections.append(correction)
         self.save()
 

@@ -218,3 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project data & memories (keep local translation data secure)
+memory_store/
+projects/
+workspace/
+worklog.md
+agent.md
+
+

@@ -1,0 +1,2 @@
+- Since this is manga, keep translations extremely concise to fit inside text bubbles.
+- Use colloquial expressions and dramatic/expressive punctuation appropriate for speech bubbles.

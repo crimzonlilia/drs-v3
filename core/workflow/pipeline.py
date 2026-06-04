@@ -242,3 +242,7 @@ class Pipeline:
     async def __aexit__(self, *args):
         await self.generator.close()
         await self.reviewer.close()
+
+
+# Alias for Orchestration role
+Orchestrator = Pipeline

@@ -23,6 +23,7 @@ correction = Correction(
     source_lang="ja",
     target_lang="vi",
     correction_type=CorrectionType.TERMINOLOGY,
+    source_term="先輩",
     original_text="tiền bối",
     corrected_text="senpai",
     note="Use approved fandom term",
