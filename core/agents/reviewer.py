@@ -137,17 +137,22 @@ class Reviewer:
             ],
         }
 
-        response = await self._client.post("/chat/completions", json=payload)
-        response.raise_for_status()
-        data = response.json()
-
-        content = data["choices"][0]["message"]["content"].strip()
-        print("\n=== RAW MODEL OUTPUT ===")
-        print(content)
-        print("========================\n")
-        usage = data.get("usage", {})
-
-        revised_draft, review_note, remaining = self._parse_response(content, draft)
+        try:
+            response = await self._client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"].strip()
+            print("\n=== RAW MODEL OUTPUT ===")
+            print(content)
+            print("========================\n")
+            usage = data.get("usage", {})
+            revised_draft, review_note, remaining = self._parse_response(content, draft)
+        except Exception as e:
+            print(f"OpenRouter API call failed in Reviewer: {e}")
+            revised_draft = draft
+            review_note = "OpenRouter was offline. Used raw translation."
+            remaining = "none"
+            usage = {"prompt_tokens": 0, "completion_tokens": 0}
 
         return ReviewResult(
             revised_draft=revised_draft,

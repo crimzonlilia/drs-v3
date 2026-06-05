@@ -80,3 +80,34 @@ class UserOut(BaseModel):
     username: str
     email: Optional[str] = None
 
+
+class GlossaryAddInput(BaseModel):
+    source_term: str
+    target_term: str
+    source_lang: str
+    target_lang: str
+    context_note: Optional[str] = ""
+
+
+class EntityAddInput(BaseModel):
+    entity_id: str
+    canonical_name: str
+    source_name: str
+    entity_type: str = "character"
+    source_lang: str
+    target_lang: str
+    pronouns: Optional[str] = ""
+    notes: Optional[str] = ""
+
+
+class StyleRuleAddInput(BaseModel):
+    rule_id: str
+    category: str = "tone"
+    description: str
+    example_before: Optional[str] = ""
+    example_after: Optional[str] = ""
+    source_lang: Optional[str] = ""
+    target_lang: Optional[str] = ""
+
+
+

@@ -226,4 +226,9 @@ workspace/
 worklog.md
 agent.md
 
-
+#gitignore for next.js
+node_modules/
+.next/
+
+
+

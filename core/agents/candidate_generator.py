@@ -136,20 +136,28 @@ class CandidateGenerator:
             ],
         }
 
-        response = await self._client.post("/chat/completions", json=payload)
-        response.raise_for_status()
-        data = response.json()
-
-        draft = data["choices"][0]["message"]["content"].strip()
-        usage = data.get("usage", {})
+        try:
+            response = await self._client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            draft = data["choices"][0]["message"]["content"].strip()
+            usage = data.get("usage", {})
+        except Exception as e:
+            print(f"OpenRouter API call failed in CandidateGenerator: {e}")
+            draft = raw_translation
+            usage = {"prompt_tokens": 0, "completion_tokens": 0}
+            data = {"choices": [{"message": {"content": draft}}]}
 
         # Kick off background search to enrich project context/fandom based on translation text
         import asyncio
         from core.agents.fandom_researcher import FandomResearcher
         async def _enrich_bg():
-            researcher = FandomResearcher(self.memory)
-            await researcher.enrich_context_from_text(source_text, source_lang, target_lang)
-            await researcher.close()
+            try:
+                researcher = FandomResearcher(self.memory)
+                await researcher.enrich_context_from_text(source_text, source_lang, target_lang)
+                await researcher.close()
+            except Exception as bg_e:
+                print(f"Background enrich failed: {bg_e}")
         asyncio.create_task(_enrich_bg())
 
         return GenerationResult(

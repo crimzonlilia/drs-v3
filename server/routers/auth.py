@@ -14,6 +14,7 @@ from server.auth import (
     create_access_token,
     get_current_user,
     TOKEN_BLACKLIST,
+    oauth2_scheme,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])

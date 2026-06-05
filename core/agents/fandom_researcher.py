@@ -221,12 +221,14 @@ Respond ONLY with a JSON object of this exact schema (no markdown formatting, no
                          [e.source_term.lower() for e in self.memory.glossary.get_all()]
         
         prompt = f"""Identify up to 3 key proper nouns, character names, or specialized terms in this text that are important for translation context.
+Focus strictly on names of characters (e.g. "Jo", "Richa"), locations, or unique project-specific proper nouns.
+Do NOT extract common, generic words, verbs, or common nouns (like "trap", "door", "fight", "teleporting").
 Do NOT include these existing terms: {existing_names}
 
 Text:
 {text[:2000]}
 
-Respond ONLY with a JSON list of strings, for example: ["Saladin", "Philip II"]
+Respond ONLY with a JSON list of strings, for example: ["Jo", "Richa"]
 If no new terms are found, respond with [].
 """
         try:

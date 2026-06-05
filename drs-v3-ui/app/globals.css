@@ -1,0 +1,203 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root {
+  --bg-primary: #fbfbfa;
+  --bg-secondary: #ffffff;
+  --bg-sidebar: #111113;
+  --bg-sidebar-workspace: #f5f5f4;
+  --text-primary: #1f2328;
+  --text-secondary: #6b7280;
+  --border-primary: rgba(31, 35, 40, 0.10);
+  --color-accent-purple: #475569;
+  --color-accent-cyan: #0f766e;
+}
+
+[data-theme="sepia"] {
+  --bg-primary: #f4ecd8;
+  --bg-secondary: #e8dcb9;
+  --bg-sidebar: #2c251f;
+  --bg-sidebar-workspace: #e4d7be;
+  --text-primary: #4a3c31;
+  --text-secondary: #705e52;
+  --border-primary: rgba(74, 60, 49, 0.15);
+  --color-accent-purple: #d97706;
+  --color-accent-cyan: #059669;
+}
+
+[data-theme="forest"] {
+  --bg-primary: #1b2620;
+  --bg-secondary: #24332b;
+  --bg-sidebar: #101814;
+  --bg-sidebar-workspace: #18231d;
+  --text-primary: #ecf3ee;
+  --text-secondary: #8da496;
+  --border-primary: rgba(141, 164, 150, 0.2);
+  --color-accent-purple: #10b981;
+  --color-accent-cyan: #34d399;
+}
+
+.dark {
+  --bg-primary: #0d0f12;
+  --bg-secondary: #15181d;
+  --bg-sidebar: #05070a;
+  --bg-sidebar-workspace: #111419;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --border-primary: rgba(148, 163, 184, 0.15);
+  --color-accent-purple: #cbd5e1;
+  --color-accent-cyan: #5eead4;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Glassmorphism effect */
+.glass {
+  background: rgba(248, 250, 252, 0.4);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.glass-strong {
+  background: rgba(226, 232, 240, 0.6);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.dark .glass-strong {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #a78bfa 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(248, 250, 252, 0.3);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.4);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.6);
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+/* Thin, auto-hiding scrollbar for editor containers */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 2px;
+}
+
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.2);
+}
+
+.dark .scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.25);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.5) !important;
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(167, 139, 250, 0.55) !important;
+}
+
+/* Input styles */
+input, textarea {
+  background: rgba(226, 232, 240, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #1e293b;
+}
+
+input:focus, textarea:focus {
+  outline: none;
+  border-color: rgba(167, 139, 250, 0.5);
+  background: rgba(226, 232, 240, 0.7);
+}
+
+.dark input, .dark textarea {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #f1f5f9;
+}
+
+.dark input:focus, .dark textarea:focus {
+  outline: none;
+  border-color: rgba(167, 139, 250, 0.5);
+  background: rgba(30, 41, 59, 0.7);
+}
+
+/* Button hover effects */
+button {
+  transition: all 0.2s ease;
+}
+
+button:hover {
+  transform: none;
+}
+
+/* Hide scrollbar for Chrome, Safari, Opera and Firefox */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
