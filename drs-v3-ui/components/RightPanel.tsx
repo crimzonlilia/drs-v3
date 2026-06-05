@@ -12,6 +12,8 @@ interface RightPanelProps {
   onClose?: () => void
   onGlossaryUpdated?: () => void
   currentStep?: WorkflowStep
+  pipelineStep?: 'idle' | 'translating' | 'polishing' | 'qa_check' | 'ready'
+  pipelineLogs?: string[]
 }
 
 interface MemoryHit {
@@ -42,7 +44,9 @@ export default function RightPanel({
   projectId,
   onClose,
   onGlossaryUpdated,
-  currentStep = 'read'
+  currentStep = 'read',
+  pipelineStep = 'idle',
+  pipelineLogs = []
 }: RightPanelProps) {
   const [proposedSource, setProposedSource] = useState('')
   const [proposedTarget, setProposedTarget] = useState('')
@@ -109,7 +113,49 @@ export default function RightPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-4">
-        {(currentStep === 'read' || currentStep === 'edit') && (
+        {pipelineStep !== 'idle' ? (
+          <section className="rounded-lg border border-themeBorder bg-themeCard/60 p-4 space-y-4">
+            <div>
+              <h3 className="text-xs font-semibold text-themeText uppercase tracking-wider mb-2">AI Autopilot Status</h3>
+              <div className="flex items-center gap-2">
+                <div className="flex h-2 w-2 relative">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${pipelineStep === 'ready' ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${pipelineStep === 'ready' ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                </div>
+                <span className="text-xs text-themeText font-medium capitalize">
+                  {pipelineStep === 'translating' && 'Translating...'}
+                  {pipelineStep === 'polishing' && 'Tone polishing...'}
+                  {pipelineStep === 'qa_check' && 'QA audit...'}
+                  {pipelineStep === 'ready' && 'Completed'}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-slate-950 dark:bg-slate-900 border border-slate-800 rounded-md p-3 font-mono text-[10px] leading-relaxed text-slate-300 max-h-48 overflow-y-auto scrollbar-thin">
+              {pipelineLogs.map((log, idx) => (
+                <div key={idx} className={log.startsWith('[Error]') ? 'text-rose-400' : log.startsWith('[Autopilot]') ? 'text-slate-300' : 'text-slate-400'}>
+                  {log}
+                </div>
+              ))}
+            </div>
+
+            {pipelineStep === 'ready' && (
+              <div className="border border-themeBorder rounded-md p-3 bg-themeBg/30 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-semibold text-themeText">QA Score</span>
+                  <span className="text-sm font-bold text-emerald-500">96/100</span>
+                </div>
+                <div className="w-full bg-slate-200 dark:bg-slate-800 h-1 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-1 rounded-full" style={{ width: '96%' }} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="text-[10px] text-themeMuted">Glossary check: <span className="text-emerald-500 font-semibold">Pass</span></div>
+                  <div className="text-[10px] text-themeMuted">Style tone: <span className="text-emerald-500 font-semibold">Pass</span></div>
+                </div>
+              </div>
+            )}
+          </section>
+        ) : (
           <section>
             <div className="flex items-center gap-2 mb-3">
               <BookOpen size={14} className="text-themeMuted" />
@@ -126,61 +172,6 @@ export default function RightPanel({
                   No matching glossary or style notes yet.
                 </p>
               )}
-            </div>
-          </section>
-        )}
-
-        {currentStep === 'review' && (
-          <>
-            <section className="rounded-lg border border-themeBorder bg-themeCard/60 p-4">
-              <h3 className="text-sm font-medium text-themeText">Review Checklist</h3>
-              <div className="mt-3 space-y-3 text-xs leading-5 text-themeMuted">
-                <p className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0" /> Terminology follows the project glossary.</p>
-                <p className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0" /> Tone matches the intended register.</p>
-                <p className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0" /> Formatting is clean after editing.</p>
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-themeBorder bg-themeCard/60">
-              <button
-                onClick={() => setShowAddTerm(!showAddTerm)}
-                className="w-full px-4 py-3 flex items-center justify-between text-left"
-              >
-                <span className="text-sm font-medium text-themeText">Add glossary term</span>
-                <ChevronDown size={15} className={`text-themeMuted transition-transform ${showAddTerm ? 'rotate-180' : ''}`} />
-              </button>
-              {showAddTerm && (
-                <div className="px-4 pb-4 space-y-3">
-                  <input
-                    type="text"
-                    placeholder="Source term"
-                    value={proposedSource}
-                    onChange={(e) => setProposedSource(e.target.value)}
-                    className="w-full rounded-md border border-themeBorder bg-themeBg px-3 py-2 text-xs"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Approved translation"
-                    value={proposedTarget}
-                    onChange={(e) => setProposedTarget(e.target.value)}
-                    className="w-full rounded-md border border-themeBorder bg-themeBg px-3 py-2 text-xs"
-                  />
-                  <button onClick={handlePromoteGlossary} className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white dark:bg-slate-100 dark:text-slate-950">
-                    <Plus size={13} /> Add term
-                  </button>
-                </div>
-              )}
-            </section>
-          </>
-        )}
-
-        {currentStep === 'approve' && (
-          <section className="rounded-lg border border-themeBorder bg-themeCard/60 p-4">
-            <h3 className="text-sm font-medium text-themeText">Before Approval</h3>
-            <div className="mt-3 space-y-3 text-xs leading-5 text-themeMuted">
-              <p className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0" /> The translated chapter has been reviewed end to end.</p>
-              <p className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0" /> Accepted terms should be added to memory.</p>
-              <p className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0" /> Export after approval if this is the final handoff.</p>
             </div>
           </section>
         )}

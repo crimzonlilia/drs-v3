@@ -75,13 +75,24 @@ export default function TopNavigation({
         )}
       </div>
 
-      <button
-        onClick={toggleTheme}
-        className="p-1.5 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard"
-        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-      >
-        {theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}
-      </button>
+      <div className="flex items-center gap-2">
+        {projectId && (
+          <Link
+            href={`/dashboard/${projectId}/memory`}
+            className="px-2.5 py-1.5 rounded-md border border-themeBorder text-xs font-medium text-themeText hover:bg-themeCard transition-colors"
+            title="Project Memory Cache"
+          >
+            Project Memory
+          </Link>
+        )}
+        <button
+          onClick={toggleTheme}
+          className="p-1.5 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard"
+          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+        >
+          {theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}
+        </button>
+      </div>
     </header>
   )
 }

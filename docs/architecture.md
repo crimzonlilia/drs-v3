@@ -8,10 +8,10 @@ This document describes the high-level system architecture and components of the
 
 ```mermaid
 graph TD
-    User([User / Streamlit UI]) --> Orchestrator[Orchestrator / Pipeline]
+    User([User / Next.js UI]) --> Orchestrator[Orchestrator / Pipeline]
     
     subgraph Vision & Layout
-        Orchestrator --> MangaTranslator[MangaTranslator]
+        Orchestrator --> LayoutTranslator[LayoutTranslator]
     end
     
     subgraph Translation & Edit
@@ -35,7 +35,7 @@ graph TD
 
     subgraph Dynamic Context Enrichment
         CandidateGenerator -.-> FandomResearcher[FandomResearcher]
-        MangaTranslator -.-> FandomResearcher
+        LayoutTranslator -.-> FandomResearcher
         FandomResearcher --> Wiki[Wikipedia API]
         FandomResearcher --> ProjectMemory
     end
@@ -47,19 +47,19 @@ graph TD
 
 DRS v3 strictly follows the **Single Responsibility Principle** to ensure there is no job overlap between the different AI agents:
 
-### 1. Vision & Layout Agent (`MangaTranslator`)
+### 1. Vision & Layout Agent (`LayoutTranslator`)
 * **Scope**: Multi-modal vision and image layout analysis.
 * **Responsibilities**:
-  * Scans manga/game screenshots to detect text boxes, coordinate coordinates, and speech bubble layouts.
+  * Scans document and panel screenshots to detect text boxes, coordinate coordinates, and layout.
   * Runs OCR to extract the original raw text.
   * Evaluates rendered pages for visual typesetting quality (alignment, text overflow, line wrapping).
-* **Code**: `core/agents/manga_translator.py`
+* **Code**: `core/agents/layout_translator.py`
 
 ### 2. Translation & Polishing Agent (`CandidateGenerator`)
 * **Scope**: High-performance, memory-compliant text translation and editing.
 * **Responsibilities**:
   * Executes the **Hybrid Translation Flow**: fetches a raw, instant translation draft via Google Translate, then uses a primary LLM to refine and polish it using project memory.
-  * Performs batch-refinement of text blocks extracted from manga pages.
+  * Performs batch-refinement of text blocks extracted from layout pages.
 * **Code**: `core/agents/candidate_generator.py`
 
 ### 3. Review & Critic Agent (`Reviewer`)
@@ -112,8 +112,14 @@ To integrate with modern web frontends (e.g., Next.js), the system exposes a cle
     * [`auth.py`](file:///d:/Gitcode/drs-v3/server/routers/auth.py): Authentication endpoints (`/register`, `/login`, `/logout`, `/me`).
   * [`server/auth.py`](file:///d:/Gitcode/drs-v3/server/auth.py): Password hashing (PBKDF2-HMAC-SHA256) and dependency-free HS256 JWT signature generator.
 
-* **Key Features**:
-  * **CORS Enabled**: Configured to connect seamlessly to Next.js clients.
-  * **Asynchronous Pipeline Integration**: Translates interactive CLI callbacks into stateful, session-based HTTP requests (`/api/translation/translate` ➔ `/api/translation/approve`).
-  * **Background Seeding**: Run background FandomResearcher tasks without blocking HTTP client threads.
-  * **Token Authentication & Security**: Secure endpoints require a valid OAuth2 Bearer Token. All passwords stored in `memory_store/users.json` are salted and hashed. Logged-out tokens are blacklisted in memory.
+---
+
+## 5. Detailed Backend Handbooks
+
+For specialized team handoffs, please refer to the following comprehensive technical specifications:
+
+* 🛡️ **[Server API & Routing Handbook](backend_server.md)**: Mappings of endpoints, request/response formats, CORS middlewares, and JWT security flows.
+* 🤖 **[Agents & Prompts Engineering Handbook](backend_agents.md)**: Design rules, multi-stage LLM chains, and genre prompt modifiers.
+* 💾 **[Database Schemas & Data Persistence Handbook](backend_data.md)**: Structural format examples for glossaries, style profiles, and active session files.
+
+

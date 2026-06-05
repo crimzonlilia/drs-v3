@@ -4,7 +4,6 @@ import React, { useState, use, useEffect } from 'react'
 import TopNavigation from '@/components/TopNavigation'
 import LeftSidebar from '@/components/LeftSidebar'
 import CenterPanel from '@/components/CenterPanel'
-import RightPanel from '@/components/RightPanel'
 import { listChapters, getProject, ProjectInfo } from '@/app/api-client'
 
 interface PageProps {
@@ -33,9 +32,10 @@ export default function ChapterWorkspace({ params }: PageProps) {
   const [sourceMode, setSourceMode] = useState<'text' | 'visual'>('text')
   const [selectedBlock, setSelectedBlock] = useState(0)
   const [showLeftSidebar, setShowLeftSidebar] = useState(true)
-  const [showRightPanel, setShowRightPanel] = useState(true)
   const [glossaryRefreshKey, setGlossaryRefreshKey] = useState(0)
   const [currentStep, setCurrentStep] = useState<'read' | 'edit' | 'review' | 'approve'>('read')
+  const [pipelineStep, setPipelineStep] = useState<'idle' | 'translating' | 'polishing' | 'qa_check' | 'ready'>('idle')
+  const [pipelineLogs, setPipelineLogs] = useState<string[]>([])
 
   useEffect(() => {
     let active = true;
@@ -68,7 +68,6 @@ export default function ChapterWorkspace({ params }: PageProps) {
 
   // Resizable Sidebars state & functions
   const [leftWidth, setLeftWidth] = useState(320)
-  const [rightWidth, setRightWidth] = useState(320)
   const [isResizing, setIsResizing] = useState(false)
 
   const startResizeLeft = (e: React.MouseEvent) => {
@@ -80,27 +79,6 @@ export default function ChapterWorkspace({ params }: PageProps) {
     const doDrag = (moveEvent: MouseEvent) => {
       const newWidth = Math.max(220, Math.min(480, startWidth + (moveEvent.clientX - startX)))
       setLeftWidth(newWidth)
-    }
-    
-    const stopDrag = () => {
-      setIsResizing(false)
-      document.removeEventListener('mousemove', doDrag)
-      document.removeEventListener('mouseup', stopDrag)
-    }
-    
-    document.addEventListener('mousemove', doDrag)
-    document.addEventListener('mouseup', stopDrag)
-  }
-
-  const startResizeRight = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsResizing(true)
-    const startX = e.clientX
-    const startWidth = rightWidth
-    
-    const doDrag = (moveEvent: MouseEvent) => {
-      const newWidth = Math.max(220, Math.min(480, startWidth - (moveEvent.clientX - startX)))
-      setRightWidth(newWidth)
     }
     
     const stopDrag = () => {
@@ -154,34 +132,14 @@ export default function ChapterWorkspace({ params }: PageProps) {
           selectedBlock={selectedBlock}
           onBlockSelect={setSelectedBlock}
           showLeftSidebar={showLeftSidebar}
-          showRightPanel={showRightPanel}
           onToggleLeft={() => setShowLeftSidebar(!showLeftSidebar)}
-          onToggleRight={() => setShowRightPanel(!showRightPanel)}
           currentStep={currentStep}
           onStepChange={setCurrentStep}
+          pipelineStep={pipelineStep}
+          setPipelineStep={setPipelineStep}
+          pipelineLogs={pipelineLogs}
+          setPipelineLogs={setPipelineLogs}
         />
-        
-        {/* Right Panel Container */}
-        <div 
-          style={{ width: showRightPanel ? `${rightWidth}px` : '0px' }}
-          className={`relative shrink-0 overflow-hidden flex ${isResizing ? '' : 'transition-[width] duration-150 ease-out'}`}
-        >
-          {showRightPanel && (
-            <div 
-              onMouseDown={startResizeRight}
-              className="absolute top-0 left-0 w-1.5 h-full cursor-col-resize hover:bg-accent-purple/40 z-50 transition-colors"
-            />
-          )}
-          <div className="w-full h-full shrink-0">
-            <RightPanel 
-              projectId={projectId}
-              selectedBlock={selectedBlock}
-              onClose={() => setShowRightPanel(false)}
-              onGlossaryUpdated={() => setGlossaryRefreshKey(prev => prev + 1)}
-              currentStep={currentStep}
-            />
-          </div>
-        </div>
       </div>
     </div>
   )

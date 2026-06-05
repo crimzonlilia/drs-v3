@@ -486,6 +486,20 @@ export default function ProjectDetails({ params }: PageProps) {
                 </div>
                 <input type="checkbox" defaultChecked className="w-4 h-4 accent-accent-purple" />
               </div>
+
+              {/* Project Memory Portal */}
+              <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-purple-700 dark:text-purple-300">Project Memory Cache</h4>
+                  <p className="text-xs text-themeMuted mt-0.5">Manage glossary terms, entities, and style constraints shared across all chapters.</p>
+                </div>
+                <Link
+                  href={`/dashboard/${projectId}/memory`}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 dark:bg-purple-550 dark:hover:bg-purple-650 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Manage Memory
+                </Link>
+              </div>
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
