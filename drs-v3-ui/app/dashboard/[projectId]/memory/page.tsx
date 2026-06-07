@@ -12,9 +12,7 @@ import {
   Moon,
   Sun,
   Sparkles,
-  Bookmark,
-  Check,
-  AlertCircle
+  Bookmark
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
 import {

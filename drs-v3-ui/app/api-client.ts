@@ -55,6 +55,7 @@ export interface MemoryData {
 export interface ChapterData {
   project_id: string;
   chapter_id: string;
+  doc_id?: string;
   draft: string;
   approved: string;
 }
@@ -69,37 +70,15 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
-async function doLogin(): Promise<string> {
-  const formData = new URLSearchParams()
-  formData.append('username', 'admin')
-  formData.append('password', 'admin123')
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
-    method: 'POST',
-    body: formData,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-  })
-  if (res.ok) {
-    const data = await res.json()
-    if (data.access_token) {
-      localStorage.setItem('drs_token', data.access_token)
-      return data.access_token
-    }
-  }
-  return ''
-}
-
 async function getAuthToken(): Promise<string> {
   if (typeof window === 'undefined') return ''
   const token = localStorage.getItem('drs_token')
   if (token && !isTokenExpired(token)) return token
-  // Token missing or expired — silent re-login
+  
+  // Token missing or expired — clear token and redirect to login page
   localStorage.removeItem('drs_token')
-  try {
-    return await doLogin()
-  } catch (err) {
-    console.error('Failed to log in automatically:', err)
-    return ''
-  }
+  window.location.href = '/'
+  return ''
 }
 
 export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
@@ -115,13 +94,18 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
   }
 
   let token = await getAuthToken()
+  if (!token) {
+    throw new Error('Not authenticated')
+  }
+
   let res = await makeRequest(token)
 
-  // Retry once on 401: token may have just expired between check and request
   if (res.status === 401) {
     localStorage.removeItem('drs_token')
-    token = await doLogin()
-    res = await makeRequest(token)
+    if (typeof window !== 'undefined') {
+      window.location.href = '/'
+    }
+    throw new Error('Session expired. Redirecting to login...')
   }
 
   if (!res.ok) {
@@ -158,20 +142,20 @@ export async function listChapters(projectId: string): Promise<string[]> {
   }
 }
 
-export async function getChapter(projectId: string, chapterId: string): Promise<ChapterData> {
-  return await apiFetch(`/api/projects/${projectId}/chapters/${chapterId}`);
+export async function getChapter(projectId: string, docId: string): Promise<ChapterData> {
+  return await apiFetch(`/api/projects/${projectId}/chapters/${docId}`);
 }
 
-export async function saveChapter(projectId: string, chapterId: string, data: { draft?: string; approved?: string }): Promise<any> {
-  return await apiFetch(`/api/projects/${projectId}/chapters/${chapterId}`, {
+export async function saveChapter(projectId: string, docId: string, data: { draft?: string; approved?: string }): Promise<any> {
+  return await apiFetch(`/api/projects/${projectId}/chapters/${docId}`, {
     method: 'POST',
     body: JSON.stringify(data)
   });
 }
 
-export async function exportChapter(projectId: string, chapterId: string): Promise<void> {
+export async function exportChapter(projectId: string, docId: string): Promise<void> {
   const token = await getAuthToken();
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/chapters/${chapterId}/export`, {
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/chapters/${docId}/export`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   if (!res.ok) throw new Error(`Export failed: ${res.status}`);
@@ -179,20 +163,20 @@ export async function exportChapter(projectId: string, chapterId: string): Promi
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${chapterId}.md`;
+  a.download = `${docId}.md`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-export async function runTranslate(projectId: string, chapterId: string, sourceText: string, sourceLang: string, targetLang: string): Promise<any> {
+export async function runTranslate(projectId: string, docId: string, sourceText: string, sourceLang: string, targetLang: string): Promise<any> {
   return await apiFetch('/api/translation/translate', {
     method: 'POST',
     body: JSON.stringify({
       project_id: projectId,
       source_text: sourceText,
-      chapter_or_doc: chapterId,
+      chapter_or_doc: docId,
       source_lang: sourceLang,
       target_lang: targetLang,
       content_type: 'novel'
@@ -200,13 +184,41 @@ export async function runTranslate(projectId: string, chapterId: string, sourceT
   });
 }
 
-export async function approveTranslation(projectId: string, sessionId: string, finalText: string, corrections: any[] = []): Promise<any> {
+export async function approveTranslation(projectId: string, sessionId: string): Promise<any> {
   return await apiFetch(`/api/translation/approve/${projectId}/${sessionId}`, {
     method: 'POST',
-    body: JSON.stringify({
-      final_text: finalText,
-      corrections
-    })
+    body: JSON.stringify({})
+  });
+}
+
+export async function getSession(sessionId: string): Promise<any> {
+  return await apiFetch(`/api/translation/session/${sessionId}`);
+}
+
+export async function saveSessionDraft(sessionId: string, currentDraft: string): Promise<any> {
+  return await apiFetch(`/api/translation/session/${sessionId}/draft`, {
+    method: 'PUT',
+    body: JSON.stringify({ current_draft: currentDraft })
+  });
+}
+
+export async function submitSessionProposals(sessionId: string, proposals: any[]): Promise<any> {
+  return await apiFetch(`/api/translation/session/${sessionId}/proposals`, {
+    method: 'PUT',
+    body: JSON.stringify({ memory_proposals: proposals })
+  });
+}
+
+export async function resumeSession(sessionId: string): Promise<any> {
+  return await apiFetch(`/api/translation/session/${sessionId}/resume`, {
+    method: 'POST'
+  });
+}
+
+export async function refineTranslation(sessionId: string, instruction: string): Promise<any> {
+  return await apiFetch(`/api/translation/session/${sessionId}/refine`, {
+    method: 'POST',
+    body: JSON.stringify({ instruction })
   });
 }
 

@@ -1,34 +1,18 @@
 """
 Pipeline — orchestrates the full DRS v3 localization workflow.
-
-Flow:
-    source_text
-        → CandidateGenerator   (LLM draft with memory context)
-        → CheckSuite           (rule-based consistency checks)
-        → Reviewer             (LLM fix pass, only if issues found)
-        → ApprovalGate         (human review + memory promotion)
-        → approved output saved to project/chapters/
-
-Each step produces a typed result. The pipeline is async end-to-end.
 """
 from __future__ import annotations
 
-# Feedback: review_callback rất đúng nhưng type hint thiếu, tôi cần Callable[
-#     [ApprovalSession],
-#     Awaitable[tuple[str, list[Correction]]]
-# ]
-# để rõ ràng hơn về kiểu dữ liệu của callback. Điều này sẽ giúp người dùng hiểu rõ hơn về cách định nghĩa hàm callback và đảm bảo rằng họ cung cấp đúng kiểu dữ liệu khi sử dụng pipeline. Ngoài ra, chúng ta cũng nên thêm docstring chi tiết cho review_callback để giải thích rõ hơn về mục đích của nó, các tham số đầu vào và giá trị trả về, để người dùng có thể dễ dàng triển khai hàm callback phù hợp với nhu cầu của họ.
-# _save_output() path lệch với folder architecture?
-
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable, Awaitable, Tuple, List
 
 from config import cfg
 from core.memory import ProjectMemory
 from core.checks import CheckSuite, CheckReport
 from core.agents import CandidateGenerator, GenerationResult, Reviewer, ReviewResult
 from core.workflow.approval_gate import ApprovalGate, ApprovalSession, PromotionResult
+from core.utils.r2 import write_text
 
 
 @dataclass
@@ -69,22 +53,6 @@ class PipelineResult:
 class Pipeline:
     """
     Full localization pipeline for one chunk of text (chapter, page, scene).
-
-    Usage:
-        mem = ProjectMemory("one-piece-vi")
-        pipeline = Pipeline(mem, source_lang="ja", target_lang="vi", content_type="manga")
-
-        async with pipeline:
-            result = await pipeline.run(
-                source_text=raw_text,
-                chapter_or_doc="ch001",
-                review_callback=my_human_review_fn,   # see below
-            )
-
-    review_callback signature:
-        async def my_review(session: ApprovalSession) -> tuple[str, list[Correction]]:
-            # present draft to human, get back final_text + corrections
-            return final_text, corrections
     """
 
     def __init__(
@@ -111,10 +79,9 @@ class Pipeline:
     async def run(
         self,
         source_text: str,
-        chapter_or_doc: str,
-        review_callback,   # async (ApprovalSession) -> (str, list[Correction])
-        save_output: bool = True,
-        output_dir: str | Path = "projects",
+        doc_id: str,
+        review_callback: Callable[[ApprovalSession], Awaitable[Tuple[str, List[Dict[str, Any]]]]],
+        save_output: bool = True
     ) -> PipelineResult:
 
         # Step 1: Generate candidate
@@ -151,16 +118,20 @@ class Pipeline:
         # Step 4: Human review via callback
         print("[4/4] Awaiting human review...")
         session = self.gate.create_session(
-            chapter_or_doc=chapter_or_doc,
+            doc_id=doc_id,
             source_text=source_text,
-            draft=review_result.revised_draft,
-            review_note=review_result.review_note,
+            current_draft=review_result.revised_draft,
+            audit_report=review_result.review_note,
+            source_lang=self.source_lang,
+            target_lang=self.target_lang
         )
 
-        final_text, corrections = await review_callback(session)
+        final_text, memory_proposals = await review_callback(session)
 
         if final_text:
-            promotion = self.gate.approve(session, final_text, corrections)
+            session.current_draft = final_text
+            session.memory_proposals = memory_proposals
+            promotion = await self.gate.approve(session)
         else:
             self.gate.reject(session)
             promotion = None
@@ -173,44 +144,30 @@ class Pipeline:
             promotion=promotion,
         )
 
-        # Save approved output
+        # Save approved output to R2
         if save_output and result.approved:
-            self._save_output(result, chapter_or_doc, output_dir)
+            self._save_output_r2(result, doc_id)
 
         print(result.summary())
         return result
 
     # ------------------------------------------------------------------ #
-    # Output persistence                                                   #
+    # Output persistence to R2                                             #
     # ------------------------------------------------------------------ #
 
-    def _save_output(
+    def _save_output_r2(
         self,
         result: PipelineResult,
-        chapter_or_doc: str,
-        output_dir: str | Path,
+        doc_id: str
     ) -> None:
-        chapter_path = (
-            Path(output_dir)
-            / self.memory.project_id
-            / "chapters"
-            / chapter_or_doc
-        )
-        chapter_path.mkdir(parents=True, exist_ok=True)
-
-        # approved output
-        (chapter_path / "approved.md").write_text(
-            result.final_text, encoding="utf-8"
-        )
-
+        doc_prefix = f"projects/{self.memory.project_id}/docs/{doc_id}/"
+        
         # draft for reference
-        (chapter_path / "draft.md").write_text(
-            result.generation.draft, encoding="utf-8"
-        )
+        write_text(f"{doc_prefix}draft.md", result.generation.draft)
 
         # review log
         log_lines = [
-            f"# Review Log — {chapter_or_doc}",
+            f"# Review Log — {doc_id}",
             f"Run: {result.session.session_id}",
             f"Date: {result.session.decided_at}",
             f"Decision: {result.session.decision}",
@@ -221,16 +178,14 @@ class Pipeline:
             "## Review Note",
             result.review.review_note,
         ]
-        if result.session.corrections:
-            log_lines += ["", "## Corrections Logged"]
-            for c in result.session.corrections:
+        if result.session.memory_proposals:
+            log_lines += ["", "## Memory Proposals Logged"]
+            for p in result.session.memory_proposals:
                 log_lines.append(
-                    f"- [{c.correction_type}] '{c.original_text}' → '{c.corrected_text}'"
+                    f"- [{p.get('type')}] '{p.get('source_term')}' → '{p.get('target_term')}' (strictness: {p.get('strictness', 'flexible')})"
                 )
 
-        (chapter_path / "review_log.md").write_text(
-            "\n".join(log_lines), encoding="utf-8"
-        )
+        write_text(f"{doc_prefix}review_log.md", "\n".join(log_lines))
 
     # ------------------------------------------------------------------ #
     # Context manager                                                      #

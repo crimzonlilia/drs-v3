@@ -24,7 +24,7 @@ class ProjectInfo(BaseModel):
 class TranslateRequest(BaseModel):
     project_id: str
     source_text: str
-    chapter_or_doc: str
+    doc_id: str
     source_lang: str
     target_lang: str
     content_type: str = "general"
@@ -32,9 +32,14 @@ class TranslateRequest(BaseModel):
 
 class TranslateResponse(BaseModel):
     session_id: str
-    draft: str
-    review_note: str
+    current_draft: str
+    audit_report: str
     check_report: Dict[str, Any]
+    validation_issues: Optional[List[Dict[str, Any]]] = None
+    editorial_score: Optional[Dict[str, float]] = None
+    editorial_feedback: Optional[List[str]] = None
+    memory_proposals: Optional[List[Dict[str, Any]]] = None
+
 
 
 class CorrectionInput(BaseModel):

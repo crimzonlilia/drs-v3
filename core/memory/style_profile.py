@@ -1,30 +1,24 @@
 """
-Style Profile — per-project tone, register, and localization preferences.
-
-Covers things like:
-- honorific handling (giữ nguyên vs Việt hoá)
-- dialogue register (formal / casual / slang)
-- fandom-specific conventions
-- content-type-specific rules (manga SFX, fanfic POV voice, etc.)
+Style Profile — per-project tone, register, and localization preferences using Cloudflare R2.
 """
 
 from __future__ import annotations
 
 import yaml
 from dataclasses import dataclass, field, asdict
-from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+from core.utils.r2 import read_text, write_text
 
 @dataclass
 class StyleRule:
     rule_id: str              # short slug, e.g. "honorific-handling"
     category: str             # "register" | "honorific" | "sfx" | "dialogue" | "formatting" | "other"
     description: str          # human-readable rule
-    example_before: str = ""  # what NOT to do / original
+    example_before: str = ""  # violation / original
     example_after: str = ""   # approved rendering
-    content_type: str = "general"   # "manga" | "fanfic" | "novel" | "general"
+    content_type: str = "general"
     source_lang: str = ""
     target_lang: str = ""
     approved_at: str = ""
@@ -41,21 +35,19 @@ class StyleProfile:
     source_lang: str
     target_lang: str
     content_type: str
-    # top-level tone note — free text, injected into every prompt
     tone_note: str = ""
     rules: list[StyleRule] = field(default_factory=list)
 
 
 class StyleMemory:
     """
-    Load, query, and save approved style profile for one project.
-
-    File lives at: memory_store/styles/{project_id}.yaml
+    Load, query, and save approved style profile for one project using Cloudflare R2.
+    File lives at: projects/{project_id}/memory/styles.yaml
     """
 
-    def __init__(self, project_id: str, store_root: str | Path = "memory_store/styles"):
+    def __init__(self, project_id: str):
         self.project_id = project_id
-        self.path = Path(store_root) / f"{project_id}.yaml"
+        self.r2_key = f"projects/{project_id}/memory/styles.yaml"
         self._profile: Optional[StyleProfile] = None
         self._load()
 
@@ -64,18 +56,22 @@ class StyleMemory:
     # ------------------------------------------------------------------ #
 
     def _load(self) -> None:
-        if not self.path.exists():
+        content = read_text(self.r2_key)
+        if not content:
+            self._profile = None
             return
-        raw = yaml.safe_load(self.path.read_text(encoding="utf-8")) or {}
-        rules = [StyleRule(**r) for r in raw.pop("rules", [])]
-        self._profile = StyleProfile(**raw, rules=rules)
+        try:
+            raw = yaml.safe_load(content) or {}
+            rules = [StyleRule(**r) for r in raw.pop("rules", [])]
+            self._profile = StyleProfile(**raw, rules=rules)
+        except Exception:
+            self._profile = None
 
     def save(self) -> None:
         if not self._profile:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         data = asdict(self._profile)
-        self.path.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        write_text(self.r2_key, yaml.dump(data, allow_unicode=True, sort_keys=False))
 
     def init_profile(
         self,

@@ -1,48 +1,47 @@
 """
 Glossary — per-project, per-language-pair terminology store.
-
-Approved terms only live here. Working/draft suggestions stay in workspace,
-never written here until user explicitly approves.
+Only approved terms are stored here, using Cloudflare R2 as backend.
 """
 
 from __future__ import annotations
 
 import yaml
 from dataclasses import dataclass, field, asdict
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
-#feedback: usage_count +=1 in lookup but never saved back to file — should we save after each lookup to persist usage counts? or is it enough to have it in-memory for the current run?
+from core.utils.r2 import read_text, write_text
 
 @dataclass
 class GlossaryEntry:
-    source_term: str          # Original term (e.g. "先輩", "nakama", "师兄")
-    target_term: str          # Approved translation (e.g. "senpai", "đồng đội")
-    source_lang: str          # e.g. "ja", "zh", "ko"
-    target_lang: str          # e.g. "vi", "en"
+    source_term: str          # Original term (e.g. "先輩", "海賊王")
+    target_term: str          # Approved default translation (e.g. "senpai", "Vua Hải Tặc")
+    source_lang: str          # e.g. "ja"
+    target_lang: str          # e.g. "vi"
     content_type: str         # "manga" | "fanfic" | "novel" | "general"
-    context_note: str = ""    # e.g. "giữ nguyên không dịch vì fandom quen"
+    strictness: str = "fixed" # "fixed" | "flexible" | "context_dependent"
+    context_variants: List[Dict[str, str]] = field(default_factory=list) # e.g. [{"context": "formal", "target_term": "tiền bối"}]
+    context_note: str = ""    # e.g. "Giữ nguyên senpai cho đúng không khí"
     approved_at: str = ""
     approved_by: str = "human"
-    usage_count: int = 0      # track how often this term appears across runs
+    usage_count: int = 0      # track usage across runs
 
     def __post_init__(self):
         if not self.approved_at:
             self.approved_at = datetime.now().isoformat(timespec="seconds")
+        if self.context_variants is None:
+            self.context_variants = []
 
 
 class Glossary:
     """
-    Load, query, and save approved glossary for one project.
-
-    File lives at: memory_store/glossaries/{project_id}.yaml
-    Only GlossaryEntry objects approved by user are stored here.
+    Load, query, and save approved glossary for one project using Cloudflare R2.
+    File lives at R2: projects/{project_id}/memory/glossary.yaml
     """
 
-    def __init__(self, project_id: str, store_root: str | Path = "memory_store/glossaries"):
+    def __init__(self, project_id: str):
         self.project_id = project_id
-        self.path = Path(store_root) / f"{project_id}.yaml"
+        self.r2_key = f"projects/{project_id}/memory/glossary.yaml"
         self._entries: list[GlossaryEntry] = []
         self._load()
 
@@ -51,32 +50,52 @@ class Glossary:
     # ------------------------------------------------------------------ #
 
     def _load(self) -> None:
-        if not self.path.exists():
+        content = read_text(self.r2_key)
+        if not content:
+            self._entries = []
             return
-        raw = yaml.safe_load(self.path.read_text(encoding="utf-8")) or []
-        self._entries = [GlossaryEntry(**e) for e in raw]
+        try:
+            raw = yaml.safe_load(content) or []
+            self._entries = [GlossaryEntry(**e) for e in raw]
+        except Exception:
+            self._entries = []
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         data = [asdict(e) for e in self._entries]
-        self.path.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        write_text(self.r2_key, yaml.dump(data, allow_unicode=True, sort_keys=False))
 
     # ------------------------------------------------------------------ #
     # Write (approval-gated — caller must confirm before calling)         #
     # ------------------------------------------------------------------ #
 
     def add_entry(self, entry: GlossaryEntry) -> None:
-        """Add or overwrite an approved entry. Call only after human approval."""
-        # overwrite if same source+lang pair already exists
-        self._entries = [
-            e for e in self._entries
-            if not (
+        """Add or merge an approved entry. Dedupes by source_term + source_lang + target_lang."""
+        existing = None
+        for e in self._entries:
+            if (
                 e.source_term == entry.source_term
                 and e.source_lang == entry.source_lang
                 and e.target_lang == entry.target_lang
-            )
-        ]
-        self._entries.append(entry)
+            ):
+                existing = e
+                break
+
+        if existing:
+            # Merge variants and update usage
+            existing.usage_count = max(existing.usage_count, entry.usage_count) + 1
+            existing.approved_at = datetime.now().isoformat(timespec="seconds")
+            existing.strictness = entry.strictness
+            existing.context_note = entry.context_note or existing.context_note
+            existing.target_term = entry.target_term or existing.target_term
+            
+            # Merge context variants
+            existing_contexts = {v["context"]: v["target_term"] for v in existing.context_variants}
+            for v in entry.context_variants:
+                existing_contexts[v["context"]] = v["target_term"]
+            existing.context_variants = [{"context": k, "target_term": v} for k, v in existing_contexts.items()]
+        else:
+            self._entries.append(entry)
+            
         self.save()
 
     def remove_entry(self, source_term: str, source_lang: str, target_lang: str) -> bool:
@@ -111,6 +130,7 @@ class Glossary:
                 and e.target_lang == target_lang
             ):
                 e.usage_count += 1
+                self.save()
                 return e
         return None
 
@@ -120,7 +140,6 @@ class Glossary:
         source_lang: str,
         target_lang: str,
     ) -> list[GlossaryEntry]:
-        """Return entries where source_term contains `partial` (case-insensitive)."""
         p = partial.lower()
         return [
             e for e in self._entries
@@ -144,20 +163,28 @@ class Glossary:
             result = [e for e in result if e.content_type == content_type]
         return result
 
-    def as_prompt_context(self, source_lang: str, target_lang: str) -> str:
+    def as_prompt_context(self, source_lang: str, target_lang: str, source_text: Optional[str] = None) -> str:
         """
-        Format glossary as a compact block to inject into LLM prompts.
-        e.g.:
-            先輩 → senpai  (giữ nguyên, fandom quen)
-            仲間 → đồng đội
+        Format glossary as a prompt context block.
+        If source_text is provided, only terms matching the text are included.
         """
         entries = self.get_all(source_lang=source_lang, target_lang=target_lang)
+        if source_text:
+            entries = [e for e in entries if e.source_term in source_text]
+            
         if not entries:
             return ""
         lines = ["[Glossary]"]
         for e in entries:
-            note = f"  ({e.context_note})" if e.context_note else ""
-            lines.append(f"  {e.source_term} → {e.target_term}{note}")
+            note = f" ({e.context_note})" if e.context_note else ""
+            if e.strictness == "fixed":
+                lines.append(f"  - Term: '{e.source_term}' -> '{e.target_term}' [Strictness: fixed]{note}")
+            elif e.strictness == "flexible":
+                variants_str = ", ".join([f"if {v['context']}: '{v['target_term']}'" for v in e.context_variants])
+                v_desc = f" (Variants: {variants_str})" if variants_str else ""
+                lines.append(f"  - Term: '{e.source_term}' -> default: '{e.target_term}' [Strictness: flexible]{v_desc}{note}")
+            elif e.strictness == "context_dependent":
+                lines.append(f"  - Term: '{e.source_term}' -> [Strictness: context_dependent] (requires manual translation review){note}")
         return "\n".join(lines)
 
     def __len__(self) -> int:

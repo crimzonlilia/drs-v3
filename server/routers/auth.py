@@ -1,14 +1,13 @@
 """
-Authentication router: register, login, logout, and current user retrieval.
+Authentication router: register, login, logout, and current user retrieval using Cloudflare D1.
 """
 
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from server.schemas import UserRegister, UserOut, Token
 from server.auth import (
-    load_users,
-    save_users,
     get_password_hash,
     verify_password,
     create_access_token,
@@ -16,6 +15,7 @@ from server.auth import (
     TOKEN_BLACKLIST,
     oauth2_scheme,
 )
+from core.utils.db import execute_query
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -26,10 +26,11 @@ async def register(data: UserRegister):
     Register a new user account.
     Passwords are encrypted securely using PBKDF2-SHA256.
     """
-    users = load_users()
     username_clean = data.username.strip()
     
-    if username_clean in users:
+    # Check D1 database
+    rows = await execute_query("SELECT id FROM users WHERE username = ?", [username_clean])
+    if rows:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
@@ -37,25 +38,32 @@ async def register(data: UserRegister):
         
     # Store hashed password
     hashed_pwd = get_password_hash(data.password)
-    users[username_clean] = {
-        "password": hashed_pwd,
-        "email": data.email.strip() if data.email else None
-    }
-    save_users(users)
+    email = data.email.strip() if data.email else None
+    created_at = datetime.now().isoformat(timespec="seconds")
     
-    return UserOut(username=username_clean, email=data.email)
+    await execute_query(
+        "INSERT INTO users (username, hashed_password, email, created_at) VALUES (?, ?, ?, ?)",
+        [username_clean, hashed_pwd, email, created_at]
+    )
+    
+    return UserOut(username=username_clean, email=email)
 
 
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """
-    OAuth2 compatible token login. Access tokens expire in 60 minutes.
-    Note: Form data fields are 'username' and 'password'.
+    OAuth2 compatible token login. Access tokens expire in 7 days.
     """
-    users = load_users()
-    user = users.get(form_data.username)
-    
-    if not user or not verify_password(form_data.password, user["password"]):
+    rows = await execute_query("SELECT hashed_password FROM users WHERE username = ?", [form_data.username])
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    user = rows[0]
+    if not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -67,12 +75,10 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @router.post("/logout")
-async def logout(token: str = Depends(get_current_user), auth_header: str = Depends(OAuth2PasswordRequestForm.__subclasses__)):
+async def logout(token: str = Depends(get_current_user)):
     """
-    Log out the current user by blacklisting their active JWT token.
+    Log out the current user.
     """
-    # Since OAuth2PasswordBearer is used, we can get raw token through oauth2_scheme dependency
-    # Let's extract it from Header or OAuth2Scheme
     return {"message": "Successfully logged out"}
 
 

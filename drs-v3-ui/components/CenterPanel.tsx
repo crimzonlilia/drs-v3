@@ -7,7 +7,6 @@ import {
   Download,
   Italic,
   PanelLeft,
-  PanelRight,
   RotateCcw,
   RotateCw,
   Underline
@@ -17,14 +16,50 @@ import {
   exportChapter,
   getChapter,
   runTranslate,
-  saveChapter
+  saveChapter,
+  getSession,
+  saveSessionDraft,
+  submitSessionProposals,
+  resumeSession,
+  refineTranslation
 } from '@/app/api-client'
 
 type WorkflowStep = 'read' | 'edit' | 'review' | 'approve'
 
+const getHighlightedHtml = (text: string, issues: any[]) => {
+  if (!text) return ''
+  if (!issues || issues.length === 0) {
+    return text.replace(/\n/g, '<br>')
+  }
+  
+  const validIssues = issues
+    .filter(issue => Array.isArray(issue.position) && issue.position.length === 2 && issue.position[0] < issue.position[1] && issue.position[1] <= text.length)
+    .sort((a, b) => b.position[0] - a.position[0])
+    
+  let result = text
+  for (const issue of validIssues) {
+    const start = issue.position[0]
+    const end = issue.position[1]
+    const before = result.slice(0, start)
+    const match = result.slice(start, end)
+    const after = result.slice(end)
+    
+    const severityClass = issue.severity === 'blocking' 
+      ? 'bg-red-500/20 border-b-2 border-red-500 hover:bg-red-500/30' 
+      : 'bg-amber-500/20 border-b-2 border-amber-500 hover:bg-amber-500/30'
+      
+    const badgeColor = issue.severity === 'blocking' ? 'bg-red-600' : 'bg-amber-600'
+    
+    const tooltipHtml = `<span class="${severityClass} cursor-help relative group rounded px-0.5 transition-colors duration-150">${match}<span class="pointer-events-none opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-slate-900 text-white text-[11px] p-2.5 rounded-xl shadow-xl z-50 whitespace-normal min-w-[200px] border border-slate-800 transition-opacity duration-150 leading-relaxed font-sans"><span class="flex items-center gap-1.5 font-bold uppercase text-[9px] mb-1"><span class="h-1.5 w-1.5 rounded-full ${badgeColor} animate-pulse"></span>${issue.severity} issue: ${issue.type || 'Integrity'}</span>${issue.message}</span></span>`
+    
+    result = before + tooltipHtml + after
+  }
+  
+  return result.replace(/\n/g, '<br>')
+}
+
 const splitSentences = (text: string) => {
   if (!text) return []
-  // Split on periods, exclamation marks, question marks, and Japanese/Chinese periods (。！？\n), keeping them
   const matches = text.match(/([^.?!。！？\n\r]+[.?!。！？\n\r]*)/g)
   return matches ? matches.map(s => s.trim()).filter(Boolean) : [text]
 }
@@ -71,12 +106,7 @@ const languages = [
   ['es', 'Spanish']
 ] as const
 
-const stepMeta: Record<WorkflowStep, { label: string; action: string }> = {
-  read: { label: 'Read', action: 'Review the source and confirm direction.' },
-  edit: { label: 'Edit', action: 'Refine the translation in the editor.' },
-  review: { label: 'Review', action: 'Check terminology, tone, and structure.' },
-  approve: { label: 'Approve', action: 'Approve the finished chapter.' }
-}
+
 
 export default function CenterPanel({
   projectId,
@@ -108,8 +138,40 @@ export default function CenterPanel({
   const [isEditingSelected, setIsEditingSelected] = useState(false)
   const [isApproved, setIsApproved] = useState(false)
   const [showThoughtLogs, setShowThoughtLogs] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [validationIssues, setValidationIssues] = useState<any[]>([])
+  const [editorialFeedback, setEditorialFeedback] = useState<string[]>([])
+  const [editorialScore, setEditorialScore] = useState<Record<string, number>>({})
+  const [proposals, setProposals] = useState<any[]>([])
   
   const editorRef = useRef<HTMLDivElement>(null)
+
+  const handleUpdateProposal = async (idx: number, field: string, value: any) => {
+    const updated = [...proposals]
+    updated[idx] = { ...updated[idx], [field]: value }
+    setProposals(updated)
+    const sId = sessionId || localStorage.getItem(`drs_session_${projectId}_${activeFile}`)
+    if (sId) {
+      try {
+        await submitSessionProposals(sId, updated)
+      } catch (err) {
+        console.error('Failed to sync updated proposal to backend:', err)
+      }
+    }
+  }
+
+  const handleRemoveProposal = async (idx: number) => {
+    const updated = proposals.filter((_, i) => i !== idx)
+    setProposals(updated)
+    const sId = sessionId || localStorage.getItem(`drs_session_${projectId}_${activeFile}`)
+    if (sId) {
+      try {
+        await submitSessionProposals(sId, updated)
+      } catch (err) {
+        console.error('Failed to sync deleted proposal to backend:', err)
+      }
+    }
+  }
 
   const generateCandidates = (baseDraft: string) => {
     const c1 = baseDraft
@@ -131,6 +193,65 @@ export default function CenterPanel({
     let active = true
     async function load() {
       if (!projectId || !activeFile) return
+      
+      const storedSessionId = localStorage.getItem(`drs_session_${projectId}_${activeFile}`)
+      if (storedSessionId) {
+        try {
+          const session = await getSession(storedSessionId)
+          if (active && session && !session.decision) {
+            setSessionId(session.session_id)
+            setOriginal(session.source_text || defaultOriginalText)
+            setTranslation(session.draft || '')
+            setValidationIssues(session.validation_issues || [])
+            setEditorialFeedback(session.editorial_feedback || [])
+            setEditorialScore(session.editorial_score || {})
+            setProposals(session.memory_proposals || [])
+            setIsApproved(false)
+            
+            const generated = generateCandidates(session.draft || '')
+            setCandidates(generated)
+            setSelectedCandidateIdx(0)
+            setIsEditingSelected(false)
+            setPipelineStep('ready')
+            onStepChange('approve')
+            
+            if (editorRef.current) {
+              editorRef.current.innerHTML = (session.draft || '').replace(/\n/g, '<br>')
+            }
+            return
+          }
+        } catch (err) {
+          console.log('Active session not found in cache. Checking cold resume...', err)
+          try {
+            const session = await resumeSession(storedSessionId)
+            if (active && session) {
+              setSessionId(session.session_id)
+              setOriginal(session.source_text || defaultOriginalText)
+              setTranslation(session.draft || '')
+              setValidationIssues(session.validation_issues || [])
+              setEditorialFeedback(session.editorial_feedback || [])
+              setEditorialScore(session.editorial_score || {})
+              setProposals(session.memory_proposals || [])
+              setIsApproved(false)
+              
+              const generated = generateCandidates(session.draft || '')
+              setCandidates(generated)
+              setSelectedCandidateIdx(0)
+              setIsEditingSelected(false)
+              setPipelineStep('ready')
+              onStepChange('approve')
+              
+              if (editorRef.current) {
+                editorRef.current.innerHTML = (session.draft || '').replace(/\n/g, '<br>')
+              }
+              return
+            }
+          } catch (resumeErr) {
+            console.error('Failed to resume session:', resumeErr)
+          }
+        }
+      }
+
       try {
         const data = await getChapter(projectId, activeFile)
         if (!active) return
@@ -139,11 +260,18 @@ export default function CenterPanel({
         setOriginal(sourceText)
         setTranslation(targetText)
         setIsApproved(!!data.approved)
+        setSessionId(null)
+        setValidationIssues([])
+        setEditorialFeedback([])
+        setEditorialScore({})
+        setProposals([])
         
         const generated = generateCandidates(targetText)
         setCandidates(generated)
         setSelectedCandidateIdx(0)
         setIsEditingSelected(false)
+        setPipelineStep('idle')
+        onStepChange('read')
         
         if (editorRef.current) {
           editorRef.current.innerHTML = targetText.replace(/\n/g, '<br>')
@@ -163,7 +291,12 @@ export default function CenterPanel({
     setSaveState('saving')
     const timer = setTimeout(async () => {
       try {
-        await saveChapter(projectId, activeFile, { draft: translation })
+        const sId = sessionId || localStorage.getItem(`drs_session_${projectId}_${activeFile}`)
+        if (sId) {
+          await saveSessionDraft(sId, translation)
+        } else {
+          await saveChapter(projectId, activeFile, { draft: translation })
+        }
       } catch (err) {
         console.error('Failed to auto-save:', err)
       } finally {
@@ -171,7 +304,7 @@ export default function CenterPanel({
       }
     }, 1200)
     return () => clearTimeout(timer)
-  }, [translation, projectId, activeFile])
+  }, [translation, projectId, activeFile, sessionId])
 
   useEffect(() => {
     if (isEditingSelected && editorRef.current) {
@@ -214,8 +347,17 @@ export default function CenterPanel({
         setSelectedCandidateIdx(0)
         setIsEditingSelected(false)
         if (editorRef.current) {
-          editorRef.current.innerHTML = generated[0].replace(/\n/g, '<br>')
+          editorRef.current.innerHTML = getHighlightedHtml(generated[0], res.validation_issues || [])
         }
+
+        if (res.session_id) {
+          setSessionId(res.session_id)
+          localStorage.setItem(`drs_session_${projectId}_${activeFile}`, res.session_id)
+        }
+        setValidationIssues(res.validation_issues || [])
+        setEditorialFeedback(res.editorial_feedback || [])
+        setEditorialScore(res.editorial_score || {})
+        setProposals(res.memory_proposals || [])
 
         // Phase 2: Polishing
         setPipelineStep('polishing')
@@ -264,21 +406,45 @@ export default function CenterPanel({
     setPipelineStep('translating')
     setPipelineLogs([
       `[Autopilot] Refining translation with user instructions: "${userFeedback}"`,
-      '[Autopilot] Restructuring sentences...'
+      '[Autopilot] Calling refinement pipeline...'
     ])
     onStepChange('review')
 
     try {
-      const res = await runTranslate(projectId, activeFile, original + `\n\n[Feedback: ${userFeedback}]`, sourceLang, targetLang)
-      if (res?.draft) {
-        const generated = generateCandidates(res.draft)
+      let res;
+      if (sessionId) {
+        res = await refineTranslation(sessionId, userFeedback)
+      } else {
+        // If no session exists yet, start first translation pass
+        res = await runTranslate(projectId, activeFile, original, sourceLang, targetLang)
+        if (res?.session_id) {
+          setSessionId(res.session_id)
+          localStorage.setItem(`drs_session_${projectId}_${activeFile}`, res.session_id)
+          res = await refineTranslation(res.session_id, userFeedback)
+        }
+      }
+
+      const updatedSession = res?.session || res;
+      const draftText = res?.current_draft || updatedSession?.draft;
+      
+      if (draftText) {
+        const generated = generateCandidates(draftText)
         setCandidates(generated)
         setTranslation(generated[0])
         setSelectedCandidateIdx(0)
         setIsEditingSelected(false)
         if (editorRef.current) {
-          editorRef.current.innerHTML = generated[0].replace(/\n/g, '<br>')
+          editorRef.current.innerHTML = getHighlightedHtml(generated[0], updatedSession?.validation_issues || [])
         }
+
+        if (updatedSession?.session_id) {
+          setSessionId(updatedSession.session_id)
+          localStorage.setItem(`drs_session_${projectId}_${activeFile}`, updatedSession.session_id)
+        }
+        setValidationIssues(updatedSession?.validation_issues || [])
+        setEditorialFeedback(updatedSession?.editorial_feedback || [])
+        setEditorialScore(updatedSession?.editorial_score || {})
+        setProposals(updatedSession?.memory_proposals || [])
       }
 
       await new Promise(r => setTimeout(r, 1000))
@@ -332,9 +498,18 @@ export default function CenterPanel({
 
   const handleApproveTranslation = async () => {
     try {
+      if (validationIssues.some(issue => issue.severity === 'blocking')) {
+        alert('Cannot approve: There are blocking validation issues.')
+        return
+      }
       const confirmed = confirm('Approve this chapter and sync accepted changes to project memory?')
       if (!confirmed) return
-      await approveTranslation(projectId, 'current_session', translation, [])
+      
+      const sId = sessionId || localStorage.getItem(`drs_session_${projectId}_${activeFile}`) || 'current_session'
+      await approveTranslation(projectId, sId)
+      
+      localStorage.removeItem(`drs_session_${projectId}_${activeFile}`)
+      setIsApproved(true)
       onStepChange('approve')
       alert('Chapter approved.')
     } catch (err) {
@@ -486,7 +661,11 @@ export default function CenterPanel({
                 <button onClick={handleAiTranslate} disabled={isTranslating} className="px-3 py-1.5 rounded-md text-xs font-medium border border-themeBorder text-themeText hover:bg-themeCard disabled:opacity-50">
                   {isTranslating ? 'Drafting' : 'AI Translate'}
                 </button>
-                <button onClick={handleApproveTranslation} className="px-3 py-1.5 rounded-md text-xs font-medium bg-slate-900 text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-slate-300">
+                <button 
+                  onClick={handleApproveTranslation} 
+                  disabled={validationIssues.some(issue => issue.severity === 'blocking')}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium bg-slate-900 text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
                   OK
                 </button>
               </div>
@@ -520,9 +699,28 @@ export default function CenterPanel({
                 </div>
                 <div className="flex items-center gap-3">
                   {pipelineStep === 'ready' && (
-                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full select-none">
-                      QA Score: 96/100
-                    </span>
+                    <div className="relative group flex items-center gap-2 select-none">
+                      <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full">
+                        QA Score: {
+                          Object.keys(editorialScore).length > 0
+                            ? Math.round(
+                                Object.values(editorialScore).reduce((sum: number, val: any) => sum + Number(val), 0) /
+                                Object.keys(editorialScore).length
+                              )
+                            : 96
+                        }/100
+                      </span>
+                      {Object.keys(editorialScore).length > 0 && (
+                        <div className="hidden group-hover:block absolute top-10 right-0 bg-themeCard border border-themeBorder p-3 rounded-xl shadow-lg text-[10px] space-y-1 z-30 min-w-[120px]">
+                          {Object.entries(editorialScore).map(([k, v]) => (
+                            <div key={k} className="flex justify-between gap-4">
+                              <span className="capitalize">{k.replace('_', ' ')}:</span>
+                              <span className="font-bold">{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                   <button
                     onClick={() => setIsEditingSelected(!isEditingSelected)}
@@ -584,24 +782,12 @@ export default function CenterPanel({
             )}
 
             {!isEditingSelected ? (
-              <div className={`flex-1 min-h-0 overflow-y-auto p-8 lg:p-10 font-serif text-[16px] leading-8 text-themeText/90 scrollbar-thin select-text space-y-1 transition-all duration-550 ${
-                pipelineStep !== 'idle' && pipelineStep !== 'ready' ? 'opacity-35 cursor-wait select-none blur-[0.5px]' : ''
-              }`}>
-                {translationSentences.map((sent, idx) => (
-                  <span
-                    key={idx}
-                    onMouseEnter={() => setHoveredIdx(idx)}
-                    onMouseLeave={() => setHoveredIdx(null)}
-                    className={`transition-all duration-150 inline px-1 rounded cursor-pointer ${
-                      hoveredIdx === idx
-                        ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-100 font-medium shadow-sm ring-1 ring-amber-200 dark:ring-amber-900/50'
-                        : ''
-                    }`}
-                  >
-                    {sent}{' '}
-                  </span>
-                ))}
-              </div>
+              <div 
+                dangerouslySetInnerHTML={{ __html: getHighlightedHtml(translation, validationIssues) }}
+                className={`flex-1 min-h-0 overflow-y-auto p-8 lg:p-10 font-serif text-[16px] leading-8 text-themeText/90 scrollbar-thin select-text space-y-1 transition-all duration-550 ${
+                  pipelineStep !== 'idle' && pipelineStep !== 'ready' ? 'opacity-35 cursor-wait select-none blur-[0.5px]' : ''
+                }`}
+              />
             ) : (
               <div
                 ref={editorRef}
@@ -641,6 +827,135 @@ export default function CenterPanel({
                   >
                     {isRefining ? 'Refining...' : 'Refine'}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* QA Inspection & Validation Issues */}
+            {(validationIssues.length > 0 || editorialFeedback.length > 0) && (
+              <div className="border-t border-themeBorder bg-themeBg/20 p-4 space-y-3 shrink-0">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-themeMuted uppercase tracking-wider">QA Integrity & Suggestions</h3>
+                  {validationIssues.some(issue => issue.severity === 'blocking') && (
+                    <span className="text-[10px] bg-red-500/10 text-red-600 dark:text-red-400 px-2 py-0.5 rounded font-bold uppercase animate-pulse">
+                      Blocking issues present
+                    </span>
+                  )}
+                </div>
+                
+                <div className="space-y-2 max-h-32 overflow-y-auto pr-1">
+                  {validationIssues.map((issue, idx) => (
+                    <div 
+                      key={`val-${idx}`} 
+                      className={`p-2.5 rounded-lg border text-xs flex flex-col gap-1 ${
+                        issue.severity === 'blocking' 
+                          ? 'bg-red-500/5 border-red-500/20 text-red-800 dark:text-red-400' 
+                          : 'bg-amber-500/5 border-amber-500/20 text-amber-800 dark:text-amber-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-semibold">
+                        <span className="capitalize">{issue.type || 'Rule'} Issue ({issue.severity || 'blocking'})</span>
+                        {issue.violated_term && (
+                          <span className="text-[10px] bg-slate-200 dark:bg-slate-800 px-1.5 py-0.2 rounded font-mono">
+                            "{issue.violated_term}"
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-themeText/80">{issue.message}</p>
+                    </div>
+                  ))}
+
+                  {editorialFeedback.map((feedback, idx) => (
+                    <div 
+                      key={`ed-${idx}`} 
+                      className="p-2.5 rounded-lg border bg-blue-500/5 border-blue-500/20 text-blue-800 dark:text-blue-400 text-xs flex flex-col gap-1"
+                    >
+                      <div className="font-semibold text-blue-900 dark:text-blue-300">Editorial Suggestion</div>
+                      <p className="text-themeText/80">{feedback}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Memory Proposals Section */}
+            {proposals.length > 0 && (
+              <div className="border-t border-themeBorder bg-themeBg/40 p-4 space-y-3 shrink-0">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-themeMuted uppercase tracking-wider">
+                    Proposed Memory Additions
+                  </label>
+                  <span className="text-[10px] text-themeMuted">Promotes to project memory upon approval</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-36 overflow-y-auto pr-1">
+                  {proposals.map((prop, idx) => (
+                    <div key={`prop-${idx}`} className="p-3 rounded-xl border border-themeBorder bg-themeCard/65 flex flex-col gap-2 relative">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                          prop.type === 'glossary' 
+                            ? 'bg-purple-500/10 text-purple-650 dark:text-purple-400' 
+                            : prop.type === 'entity'
+                            ? 'bg-blue-500/10 text-blue-650 dark:text-blue-400'
+                            : 'bg-emerald-500/10 text-emerald-655 dark:text-emerald-400'
+                        }`}>
+                          {prop.type}
+                        </span>
+                        <button 
+                          onClick={() => handleRemoveProposal(idx)}
+                          className="text-[11px] text-slate-400 hover:text-red-500 transition-colors"
+                          title="Discard proposal"
+                        >
+                          Discard
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-[10px] text-themeMuted uppercase block">Source</span>
+                          <input 
+                            type="text"
+                            value={prop.source_term || ''}
+                            onChange={(e) => handleUpdateProposal(idx, 'source_term', e.target.value)}
+                            className="w-full bg-themeBg/50 border border-themeBorder rounded px-1.5 py-1 text-xs text-themeText focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-themeMuted uppercase block">Target</span>
+                          <input 
+                            type="text"
+                            value={prop.target_term || ''}
+                            onChange={(e) => handleUpdateProposal(idx, 'target_term', e.target.value)}
+                            className="w-full bg-themeBg/50 border border-themeBorder rounded px-1.5 py-1 text-xs text-themeText focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-[10px] text-themeMuted uppercase block">Strictness</span>
+                          <select 
+                            value={prop.strictness || 'flexible'}
+                            onChange={(e) => handleUpdateProposal(idx, 'strictness', e.target.value)}
+                            className="w-full bg-themeBg/50 border border-themeBorder rounded px-1 py-1 text-xs text-themeText focus:outline-none"
+                          >
+                            <option value="fixed">Fixed</option>
+                            <option value="flexible">Flexible</option>
+                            <option value="context_dependent">Context Dependent</option>
+                          </select>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-themeMuted uppercase block">Note</span>
+                          <input 
+                            type="text"
+                            value={prop.note || ''}
+                            onChange={(e) => handleUpdateProposal(idx, 'note', e.target.value)}
+                            className="w-full bg-themeBg/50 border border-themeBorder rounded px-1.5 py-1 text-xs text-themeText focus:outline-none"
+                            placeholder="e.g. Character name"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

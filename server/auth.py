@@ -1,7 +1,7 @@
 """
 Secure authentication helper using Python built-in security modules.
 Provides PBKDF2 password hashing and dependency-free HS256 JWT tokens.
-Stores user records in memory_store/users.json.
+Stores user records in Cloudflare D1 / local SQLite.
 """
 
 import os
@@ -16,11 +16,12 @@ from pathlib import Path
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
+from core.utils.db import execute_query
+
 # Configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "drs_v3_super_secret_signing_key_change_me_in_prod")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-USERS_FILE = Path("memory_store/users.json")
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 TOKEN_BLACKLIST = set()  # In-memory blacklist for logout tokens
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -133,36 +134,12 @@ def decode_access_token(token: str) -> Optional[dict]:
 
 
 # ------------------------------------------------------------------ #
-# User Database Persistence                                           #
+# FastAPI Dependencies                                                #
 # ------------------------------------------------------------------ #
 
-def load_users() -> Dict[str, dict]:
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     """
-    Load users dictionary from JSON storage.
-    """
-    if not USERS_FILE.exists():
-        USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        return {}
-    try:
-        return json.loads(USERS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def save_users(users: Dict[str, dict]) -> None:
-    """
-    Save users dictionary to JSON storage.
-    """
-    USERS_FILE.write_text(json.dumps(users, indent=2, ensure_ascii=False), encoding="utf-8")
-
-
-# ------------------------------------------------------------------ #
-# FastAPI Dependecies                                                 #
-# ------------------------------------------------------------------ #
-
-def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    """
-    Dependency to authenticate requests. Extracts user from JWT token.
+    Dependency to authenticate requests. Extracts user from D1 database.
     """
     payload = decode_access_token(token)
     if not payload:
@@ -173,12 +150,21 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         )
     
     username = payload.get("sub")
-    users = load_users()
-    user = users.get(username)
-    if not user:
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token payload invalid",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    # Load user from D1 Database
+    rows = await execute_query("SELECT id, username, email FROM users WHERE username = ?", [username])
+    if not rows:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return {"username": username, "email": user.get("email")}
+    
+    user = rows[0]
+    return {"id": user["id"], "username": user["username"], "email": user["email"]}

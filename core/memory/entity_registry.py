@@ -1,23 +1,16 @@
 """
 Entity Registry — track characters, proper nouns, relationships, and
-world-specific facts across chapters/documents.
-
-Prevents context drift: same character doesn't get called "anh" in ch1
-and "hắn" in ch5 without a deliberate override.
+world-specific facts across chapters/documents using Cloudflare R2.
 """
 
 from __future__ import annotations
 
 import yaml
 from dataclasses import dataclass, field, asdict
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, List
 
-# Feedback: currently this is just a flat list of entities. In the future we could add relationship tracking (e.g. Luffy is the captain of the Straw Hat crew, Nami is the navigator, etc.) and have that also injected into prompts to help maintain consistency on relational facts. But for now let's start simple with just a registry of approved names and pronouns for characters and other entities, and we can always expand later if we find that it's not enough to prevent drift.
-# source_name in aliases too, for matching against original text that may use either canonical or source name. Also maybe we should have a separate "mention_count" field that increments on each lookup, so we can track which entities are most commonly referenced and prioritize those for human review and approval? That way we can focus our efforts on the most impactful consistency fixes.
-# and source_name in aliases is exact matching only, not fuzzy — we can have a separate search function that does fuzzy matching across canonical_name, source_name, and aliases for cases where the exact source_name isn't found but there's a close match that might be the same entity. But for the main lookup during consistency checks, it should be exact matching against source_name and aliases to avoid false positives.
-# 
+from core.utils.r2 import read_text, write_text
 
 @dataclass
 class Entity:
@@ -27,9 +20,9 @@ class Entity:
     entity_type: str            # "character" | "place" | "title" | "faction" | "term" | "ship"
     source_lang: str
     target_lang: str
-    pronouns: str = ""          # e.g. "anh/hắn", "cô/nàng" — approved pronoun set
-    aliases: list[str] = field(default_factory=list)   # other names this entity goes by
-    notes: str = ""             # e.g. "CEO của corp trong AU office, không phải royalty"
+    pronouns: str = ""          # e.g. "anh/hắn", "cô/nàng"
+    aliases: list[str] = field(default_factory=list)
+    notes: str = ""
     content_type: str = "general"
     approved_at: str = ""
     approved_by: str = "human"
@@ -38,18 +31,20 @@ class Entity:
     def __post_init__(self):
         if not self.approved_at:
             self.approved_at = datetime.now().isoformat(timespec="seconds")
+        if self.aliases is None:
+            self.aliases = []
 
 
 class EntityRegistry:
     """
-    Load, query, and save approved entities for one project.
-
-    File lives at: memory_store/entities/{project_id}.yaml
+    Load, query, and save approved entities for one project using Cloudflare R2.
+    File lives at: projects/{project_id}/memory/entities.yaml
+    Internal structure uses dictionary mapping entity_id -> Entity for O(1) access.
     """
 
-    def __init__(self, project_id: str, store_root: str | Path = "memory_store/entities"):
+    def __init__(self, project_id: str):
         self.project_id = project_id
-        self.path = Path(store_root) / f"{project_id}.yaml"
+        self.r2_key = f"projects/{project_id}/memory/entities.yaml"
         self._entities: dict[str, Entity] = {}   # keyed by entity_id
         self._load()
 
@@ -58,17 +53,22 @@ class EntityRegistry:
     # ------------------------------------------------------------------ #
 
     def _load(self) -> None:
-        if not self.path.exists():
+        content = read_text(self.r2_key)
+        if not content:
+            self._entities = {}
             return
-        raw = yaml.safe_load(self.path.read_text(encoding="utf-8")) or []
-        for item in raw:
-            e = Entity(**item)
-            self._entities[e.entity_id] = e
+        try:
+            raw = yaml.safe_load(content) or []
+            self._entities = {}
+            for item in raw:
+                e = Entity(**item)
+                self._entities[e.entity_id] = e
+        except Exception:
+            self._entities = {}
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         data = [asdict(e) for e in self._entities.values()]
-        self.path.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        write_text(self.r2_key, yaml.dump(data, allow_unicode=True, sort_keys=False))
 
     # ------------------------------------------------------------------ #
     # Write                                                                #
@@ -100,6 +100,7 @@ class EntityRegistry:
                 continue
             if e.source_name == source_name or source_name in e.aliases:
                 e.mention_count += 1
+                self.save()
                 return e
         return None
 
@@ -128,19 +129,22 @@ class EntityRegistry:
             result = [e for e in result if e.target_lang == target_lang]
         return result
 
-    def as_prompt_context(self, source_lang: str, target_lang: str) -> str:
+    def as_prompt_context(self, source_lang: str, target_lang: str, source_text: Optional[str] = None) -> str:
         """
         Compact block for LLM prompt injection.
-        e.g.:
-            [Characters]
-              ルフィ (Luffy) → Luffy | pronouns: hắn/cậu
-              ナミ (Nami) → Nami | pronouns: cô/nàng
+        If source_text is provided, only entities whose source_name or aliases appear in the text are included.
         """
         entities = self.get_all(source_lang=source_lang, target_lang=target_lang)
+        if source_text:
+            filtered = []
+            for e in entities:
+                if e.source_name in source_text or any(a in source_text for a in e.aliases):
+                    filtered.append(e)
+            entities = filtered
+            
         if not entities:
             return ""
 
-        # group by type
         grouped: dict[str, list[Entity]] = {}
         for e in entities:
             grouped.setdefault(e.entity_type, []).append(e)
@@ -151,7 +155,7 @@ class EntityRegistry:
             for e in items:
                 pronoun_note = f" | pronouns: {e.pronouns}" if e.pronouns else ""
                 note = f" | {e.notes}" if e.notes else ""
-                lines.append(f"    {e.source_name} → {e.canonical_name}{pronoun_note}{note}")
+                lines.append(f"    - '{e.source_name}' -> '{e.canonical_name}'{pronoun_note}{note}")
         return "\n".join(lines)
 
     def __len__(self) -> int:

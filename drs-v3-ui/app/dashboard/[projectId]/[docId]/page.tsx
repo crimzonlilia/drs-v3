@@ -7,15 +7,15 @@ import CenterPanel from '@/components/CenterPanel'
 import { listChapters, getProject, ProjectInfo } from '@/app/api-client'
 
 interface PageProps {
-  params: Promise<{ projectId: string; chapterId: string }>
+  params: Promise<{ projectId: string; docId: string }>
 }
 
 export default function ChapterWorkspace({ params }: PageProps) {
-  const { projectId, chapterId } = use(params)
+  const { projectId, docId } = use(params)
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
   
-  // Format chapter name for display, e.g. "chapter1" -> "Chapter 1"
-  const formatChapter = (ch: string) => {
+  // Format document name for display, e.g. "chapter1" -> "Chapter 1"
+  const formatDoc = (ch: string) => {
     if (!ch) return ''
     if (ch.startsWith('chapter')) {
       return `Chapter ${ch.replace('chapter', '')}`
@@ -23,16 +23,16 @@ export default function ChapterWorkspace({ params }: PageProps) {
     return ch.charAt(0).toUpperCase() + ch.slice(1)
   }
   
-  const chapterName = formatChapter(chapterId)
+  const docName = formatDoc(docId)
   const projectName = projectInfo ? (projectInfo.project_id === 'demo_project' ? 'Sample Document' : projectInfo.project_id) : projectId
-  const displayTitle = `${projectName} / ${chapterName}`
+  const displayTitle = `${projectName} / ${docName}`
 
   const [currentProject, setCurrentProject] = useState(displayTitle)
-  const [activeFile, setActiveFile] = useState(chapterId)
+  const [activeFile, setActiveFile] = useState(docId)
   const [sourceMode, setSourceMode] = useState<'text' | 'visual'>('text')
   const [selectedBlock, setSelectedBlock] = useState(0)
   const [showLeftSidebar, setShowLeftSidebar] = useState(true)
-  const [glossaryRefreshKey, setGlossaryRefreshKey] = useState(0)
+  const [glossaryRefreshKey] = useState(0)
   const [currentStep, setCurrentStep] = useState<'read' | 'edit' | 'review' | 'approve'>('read')
   const [pipelineStep, setPipelineStep] = useState<'idle' | 'translating' | 'polishing' | 'qa_check' | 'ready'>('idle')
   const [pipelineLogs, setPipelineLogs] = useState<string[]>([])
@@ -45,7 +45,7 @@ export default function ChapterWorkspace({ params }: PageProps) {
         if (active && info) {
           setProjectInfo(info);
           const pName = info.project_id === 'demo_project' ? 'Sample Document' : info.project_id;
-          setCurrentProject(`${pName} / ${formatChapter(chapterId)}`);
+          setCurrentProject(`${pName} / ${formatDoc(docId)}`);
         }
       } catch (err) {
         console.error('Failed to load project in workspace:', err);
@@ -54,8 +54,8 @@ export default function ChapterWorkspace({ params }: PageProps) {
       try {
         const chapters = await listChapters(projectId);
         if (active && chapters && chapters.length > 0) {
-          // Find if there's a chapter matching chapterId or fallback to first
-          const match = chapters.find(c => c.toLowerCase().includes(chapterId.toLowerCase()));
+          // Find if there's a chapter matching docId or fallback to first
+          const match = chapters.find(c => c.toLowerCase().includes(docId.toLowerCase()));
           setActiveFile(match || chapters[0]);
         }
       } catch (err) {
@@ -64,7 +64,7 @@ export default function ChapterWorkspace({ params }: PageProps) {
     }
     load();
     return () => { active = false; };
-  }, [projectId, chapterId]);
+  }, [projectId, docId]);
 
   // Resizable Sidebars state & functions
   const [leftWidth, setLeftWidth] = useState(320)

@@ -1,58 +1,80 @@
 """
-Approval Gate — the boundary between working state and approved memory.
-
-This is the core DRS thesis:
-- Drafts and AI suggestions live in workspace/ (temporary, not trusted)
-- Only human-approved content gets written to memory_store/ (persistent, trusted)
-
-The gate handles:
-1. Presenting a draft to the human for review
-2. Recording the human's decision (approve / reject / edit)
-3. Promoting approved corrections into the right memory store
+Approval Gate — in-memory session caching and Cloudflare R2/D1 promotion flow.
+Defines Decision, Correction, and Promotion types.
 """
-
-#Feedback: promote_*() luôn mà không check nếu correction_id đã tồn tại trong glossary/entity/style trước đó, có thể dẫn đến duplicates hoặc conflicts nếu cùng một correction được promoted nhiều lần. Chúng ta nên thêm một check để đảm bảo rằng correction_id chưa tồn tại trong target store trước khi thêm, và nếu đã tồn tại thì có thể log một warning hoặc skip promotion để tránh ghi đè hoặc tạo bản sao không cần thiết. Điều này sẽ giúp duy trì tính nhất quán và sạch sẽ của memory store khi có nhiều corrections được promoted theo thời gian.
-
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import yaml
+import uuid
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from core.memory import (
     ProjectMemory,
     GlossaryEntry,
     StyleRule,
-    Entity,
-    Correction,
-    CorrectionType,
+    Entity
 )
-
+from core.utils.db import execute_query
+from core.utils.r2 import read_text, write_text
 
 class Decision(str, Enum):
     APPROVED = "approved"       # accept draft as-is
     EDITED = "edited"           # accept with human edits
     REJECTED = "rejected"       # discard draft entirely
 
+class CorrectionType(str, Enum):
+    TERMINOLOGY = "terminology"   # wrong term translation
+    ENTITY = "entity"             # wrong name/pronoun
+    STYLE = "style"               # tone/register issue
+    FACTUAL = "factual"           # wrong in-world fact
+    OTHER = "other"
 
 @dataclass
 class ApprovalSession:
     session_id: str
     project_id: str
-    chapter_or_doc: str
+    doc_id: str                  # Changed from chapter_or_doc
     source_text: str
-    draft: str                          # AI draft (post-review)
-    review_note: str = ""               # from reviewer agent
+    current_draft: str           # Changed from draft
+    audit_report: str = ""       # Changed from review_note
+    source_lang: str = "ja"
+    target_lang: str = "vi"
     decision: Optional[Decision] = None
-    final_text: str = ""                # approved output (draft or edited version)
-    corrections: list[Correction] = field(default_factory=list)
+    final_text: str = ""
     decided_at: str = ""
+    validation_issues: List[Dict[str, Any]] = field(default_factory=list)
+    editorial_score: Dict[str, float] = field(default_factory=dict)
+    editorial_feedback: List[str] = field(default_factory=list)
+    memory_proposals: List[Dict[str, Any]] = field(default_factory=list) # Changed from corrections
 
     def is_complete(self) -> bool:
         return self.decision is not None
 
+def session_from_dict(d: dict) -> ApprovalSession:
+    decision_val = d.get("decision")
+    decision = Decision(decision_val) if decision_val else None
+    return ApprovalSession(
+        session_id=d["session_id"],
+        project_id=d["project_id"],
+        doc_id=d["doc_id"],
+        source_text=d["source_text"],
+        current_draft=d["current_draft"],
+        audit_report=d.get("audit_report", ""),
+        source_lang=d.get("source_lang", "ja"),
+        target_lang=d.get("target_lang", "vi"),
+        decision=decision,
+        final_text=d.get("final_text", ""),
+        decided_at=d.get("decided_at", ""),
+        validation_issues=d.get("validation_issues", []),
+        editorial_score=d.get("editorial_score", {}),
+        editorial_feedback=d.get("editorial_feedback", []),
+        memory_proposals=d.get("memory_proposals", [])
+    )
 
 @dataclass
 class PromotionResult:
@@ -61,20 +83,12 @@ class PromotionResult:
     promoted_style: int = 0
     promoted_corrections: int = 0
 
+# Ephemeral RAM session cache (keyed by session_id)
+SESSION_CACHE: Dict[str, ApprovalSession] = {}
 
 class ApprovalGate:
     """
-    Manages the human review step and memory promotion.
-
-    Usage (in pipeline):
-        gate = ApprovalGate(memory)
-        session = gate.create_session(...)
-
-        # present to human via CLI or UI
-        final_text, corrections = human_review(session)
-
-        result = gate.approve(session, final_text, corrections)
-        # or: gate.reject(session)
+    Manages the in-memory human review sessions and cloud Promotion Flow.
     """
 
     def __init__(self, memory: ProjectMemory):
@@ -86,81 +100,221 @@ class ApprovalGate:
 
     def create_session(
         self,
-        chapter_or_doc: str,
+        doc_id: str,
         source_text: str,
-        draft: str,
-        review_note: str = "",
+        current_draft: str,
+        audit_report: str = "",
+        source_lang: str = "ja",
+        target_lang: str = "vi",
+        validation_issues: List[Dict[str, Any]] = None,
+        editorial_score: Dict[str, float] = None,
+        editorial_feedback: List[str] = None,
+        memory_proposals: List[Dict[str, Any]] = None
     ) -> ApprovalSession:
-        session_id = f"{self.memory.project_id}-{chapter_or_doc}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        return ApprovalSession(
+        session_id = f"{self.memory.project_id}-{doc_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        session = ApprovalSession(
             session_id=session_id,
             project_id=self.memory.project_id,
-            chapter_or_doc=chapter_or_doc,
+            doc_id=doc_id,
             source_text=source_text,
-            draft=draft,
-            review_note=review_note,
+            current_draft=current_draft,
+            audit_report=audit_report,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            validation_issues=validation_issues if validation_issues is not None else [],
+            editorial_score=editorial_score if editorial_score is not None else {},
+            editorial_feedback=editorial_feedback if editorial_feedback is not None else [],
+            memory_proposals=memory_proposals if memory_proposals is not None else []
         )
+        # Store in RAM cache
+        SESSION_CACHE[session_id] = session
+        
+        # Save to R2 initially
+        self.save_translation_draft(session)
+        
+        return session
 
-    def approve(
+    def load_session(self, session_id: str) -> Optional[ApprovalSession]:
+        return SESSION_CACHE.get(session_id)
+
+    def save_translation_draft(self, session: ApprovalSession) -> None:
+        """
+        Saves current_draft and full GraphState to R2 for cold-resume support.
+        """
+        doc_prefix = f"projects/{session.project_id}/docs/{session.doc_id}/"
+        # 1. Save plain-text draft.md preview
+        write_text(f"{doc_prefix}draft.md", session.current_draft)
+        # 2. Save full JSON draft_state.json
+        state_data = asdict(session)
+        write_text(f"{doc_prefix}draft_state.json", json.dumps(state_data, ensure_ascii=False, indent=2))
+
+    async def approve(
         self,
         session: ApprovalSession,
-        final_text: str,
-        corrections: list[Correction] | None = None,
         auto_promote: bool = True,
+        approved_by_user_id: int = 1
     ) -> PromotionResult:
         """
-        Human approved — finalize, log, and optionally auto-promote corrections.
+        Finalizes draft, pushes changes to R2 memory, D1 database segments,
+        master_index and output versions, and purges the session.
         """
-        session.decision = Decision.APPROVED if final_text == session.draft else Decision.EDITED
+        final_text = session.current_draft
+        session.decision = Decision.APPROVED
         session.final_text = final_text
         session.decided_at = datetime.now().isoformat(timespec="seconds")
 
         result = PromotionResult()
-
-        if corrections:
-            for c in corrections:
-                # Log the correction first
-                self.memory.corrections.log(c)
-                session.corrections.append(c)
-                result.promoted_corrections += 1
+        
+        # 1. Promote memory proposals into R2
+        if session.memory_proposals and auto_promote:
+            for p in session.memory_proposals:
+                p_type = p.get("type")
+                source_term = p.get("source_term", "")
+                target_term = p.get("target_term", "")
+                strictness = p.get("strictness", "flexible")
+                note = p.get("note", "")
                 
-                if auto_promote:
-                    if c.correction_type == CorrectionType.TERMINOLOGY:
-                        entry = GlossaryEntry(
-                            source_term=c.source_term,
-                            target_term=c.corrected_text,
-                            source_lang=c.source_lang,
-                            target_lang=c.target_lang,
-                            content_type="general",
-                            context_note=c.note or "Auto-promoted from UI review",
-                        )
-                        self.memory.glossary.add_entry(entry)
-                        self.memory.corrections.promote(c.correction_id, "glossary")
-                        result.promoted_glossary += 1
-                    elif c.correction_type == CorrectionType.ENTITY:
-                        entity = Entity(
-                            entity_id=c.correction_id,
-                            canonical_name=c.corrected_text,
-                            source_name=c.source_term or c.original_text,
-                            entity_type="character",
-                            source_lang=c.source_lang,
-                            target_lang=c.target_lang,
-                        )
-                        self.memory.entities.add_entity(entity)
-                        self.memory.corrections.promote(c.correction_id, "entity")
-                        result.promoted_entities += 1
-                    elif c.correction_type == CorrectionType.STYLE:
-                        if self.memory.style.profile:
-                            rule = StyleRule(
-                                rule_id=c.correction_id,
-                                category="general",
-                                description=c.note or f"Translate '{c.original_text}' as '{c.corrected_text}'",
-                                example_before=c.original_text,
-                                example_after=c.corrected_text,
-                            )
-                            self.memory.style.add_rule(rule)
-                            self.memory.corrections.promote(c.correction_id, "style")
-                            result.promoted_style += 1
+                if strictness not in ["fixed", "flexible", "context_dependent"]:
+                    strictness = "flexible"
+
+                if p_type == "glossary":
+                    entry = GlossaryEntry(
+                        source_term=source_term,
+                        target_term=target_term,
+                        source_lang=session.source_lang,
+                        target_lang=session.target_lang,
+                        content_type="general",
+                        strictness=strictness,
+                        context_note=note or "Auto-promoted from UI review",
+                    )
+                    self.memory.glossary.add_entry(entry)
+                    result.promoted_glossary += 1
+                    result.promoted_corrections += 1
+                elif p_type == "entity":
+                    entity_id = p.get("entity_id") or f"ent_{str(uuid.uuid4())[:8]}"
+                    entity = Entity(
+                        entity_id=entity_id,
+                        canonical_name=target_term,
+                        source_name=source_term,
+                        entity_type=p.get("entity_type", "character"),
+                        source_lang=session.source_lang,
+                        target_lang=session.target_lang,
+                        pronouns=p.get("pronouns", ""),
+                        notes=note or p.get("notes", "")
+                    )
+                    self.memory.entities.add_entity(entity)
+                    result.promoted_entities += 1
+                    result.promoted_corrections += 1
+                elif p_type == "style":
+                    rule_id = p.get("rule_id") or f"style_{str(uuid.uuid4())[:8]}"
+                    rule = StyleRule(
+                        rule_id=rule_id,
+                        category=p.get("category", "general"),
+                        description=note or f"Translate '{source_term}' as '{target_term}'",
+                        example_before=source_term,
+                        example_after=target_term,
+                        source_lang=session.source_lang,
+                        target_lang=session.target_lang
+                    )
+                    self.memory.style.add_rule(rule)
+                    result.promoted_style += 1
+                    result.promoted_corrections += 1
+
+        # Save style corrections if user changed the initial draft (can check against draft or source)
+        # Note: If no style corrections, we can still record human corrections for future learning
+        self.memory.add_style_correction(
+            doc_id=session.doc_id,
+            segment_id=f"{session.doc_id}_seg_{datetime.now().strftime('%M%S')}",
+            original_draft=session.source_text,  # Fallback reference
+            approved_version=final_text,
+            note=f"Corrected via approval session {session.session_id}",
+            approved_by=str(approved_by_user_id),
+            approved_at=session.decided_at
+        )
+
+        # 2. Write to D1 database segments (idempotent INSERT OR REPLACE)
+        segment_id = f"seg_{datetime.now().strftime('%H%M%S')}"
+        sql = """
+        INSERT OR REPLACE INTO segments 
+        (project_id, doc_id, segment_id, segment_type, source_text, target_text, approved_by, approved_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        await execute_query(sql, [
+            session.project_id,
+            session.doc_id,
+            segment_id,
+            "paragraph",
+            session.source_text,
+            final_text,
+            approved_by_user_id,
+            session.decided_at
+        ])
+
+        # 3. Update master_index/{doc_id}.yaml in R2
+        master_index_path = f"projects/{session.project_id}/memory/master_index/{session.doc_id}.yaml"
+        segments_data = await execute_query(
+            "SELECT segment_id, source_text FROM segments WHERE project_id = ? AND doc_id = ?",
+            [session.project_id, session.doc_id]
+        )
+        
+        entities_list = self.memory.entities.get_all(source_lang=session.source_lang, target_lang=session.target_lang)
+        glossary_list = self.memory.glossary.get_all(source_lang=session.source_lang, target_lang=session.target_lang)
+        
+        entities_index = {}
+        terms_index = {}
+        
+        for seg in segments_data:
+            text = seg["source_text"]
+            seg_id = seg["segment_id"]
+            
+            for ent in entities_list:
+                if ent.source_name in text:
+                    entities_index.setdefault(ent.entity_id, {}).setdefault("segment_ids", []).append(seg_id)
+            for g in glossary_list:
+                if g.source_term in text:
+                    terms_index.setdefault(g.source_term, {}).setdefault("segment_ids", []).append(seg_id)
+                    
+        master_index = {
+            "doc_id": session.doc_id,
+            "entities": entities_index,
+            "terms": terms_index
+        }
+        write_text(master_index_path, yaml.dump(master_index, allow_unicode=True, sort_keys=False))
+
+        # 4. Save progressive outputs/translation_v{n}.json in R2
+        output_prefix = f"projects/{session.project_id}/docs/{session.doc_id}/outputs/"
+        all_keys = list_keys_with_prefix(output_prefix)
+        v_num = 1
+        for key in all_keys:
+            if "translation_v" in key and key.endswith(".json"):
+                try:
+                    num = int(key.split("translation_v")[-1].split(".json")[0])
+                    if num >= v_num:
+                        v_num = num + 1
+                except Exception:
+                    pass
+                    
+        output_data = {
+            "doc_id": session.doc_id,
+            "version": v_num,
+            "approved_text": final_text,
+            "source_text": session.source_text,
+            "decided_at": session.decided_at
+        }
+        write_text(f"{output_prefix}translation_v{v_num}.json", json.dumps(output_data, ensure_ascii=False, indent=2))
+
+        # 5. Overwrite outputs/metadata.json in R2
+        latest_meta = {
+            "latest_version": v_num,
+            "approved_by": str(approved_by_user_id),
+            "approved_at": session.decided_at,
+            "segment_count": len(segments_data)
+        }
+        write_text(f"{output_prefix}metadata.json", json.dumps(latest_meta, ensure_ascii=False, indent=2))
+
+        # 6. Purge session from RAM cache and delete temporary draft_state
+        if session.session_id in SESSION_CACHE:
+            del SESSION_CACHE[session.session_id]
 
         return result
 
@@ -168,77 +322,13 @@ class ApprovalGate:
         session.decision = Decision.REJECTED
         session.final_text = ""
         session.decided_at = datetime.now().isoformat(timespec="seconds")
+        if session.session_id in SESSION_CACHE:
+            del SESSION_CACHE[session.session_id]
 
-    # ------------------------------------------------------------------ #
-    # Memory promotion (explicit — always human-triggered)                #
-    # ------------------------------------------------------------------ #
 
-    def _is_pending(self, correction_id: str) -> bool:
-        existing = next((c for c in self.memory.corrections._corrections if c.correction_id == correction_id), None)
-        return existing is not None and existing.status == "pending"
-
-    def promote_correction_to_glossary(
-        self,
-        correction_id: str,
-        source_term: str,
-        target_term: str,
-        source_lang: str,
-        target_lang: str,
-        content_type: str = "general",
-        context_note: str = "",
-    ) -> bool:
-        """Promote a logged correction into the approved glossary."""
-        if not self._is_pending(correction_id):
-            return False
-        entry = GlossaryEntry(
-            source_term=source_term,
-            target_term=target_term,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            content_type=content_type,
-            context_note=context_note,
-        )
-        self.memory.glossary.add_entry(entry)
-        self.memory.corrections.promote(correction_id, "glossary")
-        return True
-
-    def promote_correction_to_entity(
-        self,
-        correction_id: str,
-        entity: Entity,
-    ) -> bool:
-        """Promote a logged correction into the entity registry."""
-        if not self._is_pending(correction_id):
-            return False
-        self.memory.entities.add_entity(entity)
-        self.memory.corrections.promote(correction_id, "entity")
-        return True
-
-    def promote_correction_to_style(
-        self,
-        correction_id: str,
-        rule: StyleRule,
-    ) -> bool:
-        """Promote a logged correction into the style profile."""
-        if not self._is_pending(correction_id):
-            return False
-        if not self.memory.style.profile:
-            raise RuntimeError("Style profile not initialized for this project.")
-        self.memory.style.add_rule(rule)
-        self.memory.corrections.promote(correction_id, "style")
-        return True
-
-    def get_pending_promotions(self) -> dict:
-        """
-        Show corrections still pending promotion — useful for CLI review prompt.
-        Groups by correction_type for easy triage.
-        """
-        pending = self.memory.corrections.get_pending()
-        grouped: dict[str, list] = {}
-        for c in pending:
-            grouped.setdefault(c.correction_type, []).append(c)
-        return grouped
-
-    def get_repeated_patterns(self, min_count: int = 2) -> dict:
-        """Surface repeated corrections that are strong candidates for promotion."""
-        return self.memory.corrections.get_repeated_patterns(min_count)
+def list_keys_with_prefix(prefix: str) -> List[str]:
+    """
+    Helper to list R2/Mock keys starting with a prefix.
+    """
+    from core.utils.r2 import list_files
+    return list_files(prefix)

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { BookOpen, Check, ChevronDown, PanelRight, Plus } from 'lucide-react'
+import { BookOpen, ChevronDown, PanelRight, Plus } from 'lucide-react'
 import { addGlossaryTerm, getProjectMemory } from '@/app/api-client'
 
 type WorkflowStep = 'read' | 'edit' | 'review' | 'approve'
