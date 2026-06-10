@@ -25,3 +25,9 @@ services:
         sync: false
       - key: CF_API_TOKEN
         sync: false
+      - key: MOCK_OCR
+        value: "true"
+      - key: MANGA_OCR_API_URL
+        sync: false
+      - key: PADDLE_OCR_API_URL
+        sync: false

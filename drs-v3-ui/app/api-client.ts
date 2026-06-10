@@ -280,3 +280,60 @@ export async function createProject(data: { project_id: string; source_lang: str
   });
 }
 
+export async function uploadAssets(projectId: string, docId: string, files: File[]): Promise<any> {
+  const formData = new FormData();
+  files.forEach(file => formData.append('files', file));
+  
+  const token = await getAuthToken();
+  const res = await fetch(`${API_BASE}/api/docs/${docId}/assets/upload?project_id=${projectId}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
+    body: formData
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || `Upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function runOcr(projectId: string, docId: string, force = false): Promise<any> {
+  return await apiFetch(`/api/docs/${docId}/ocr/run?project_id=${projectId}&force=${force}`, {
+    method: 'POST'
+  });
+}
+
+export async function exportDoc(projectId: string, docId: string, format: string, options: { font?: string; heading?: string; spacing?: number } = {}): Promise<void> {
+  const token = await getAuthToken();
+  const res = await fetch(`${API_BASE}/api/docs/${docId}/export`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      project_id: projectId,
+      format,
+      ...options
+    })
+  });
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  
+  let ext = 'txt';
+  if (format === 'docx') ext = 'docx';
+  else if (format === 'zip') ext = 'zip';
+  
+  a.download = `${docId}_export.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
