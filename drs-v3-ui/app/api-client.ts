@@ -170,13 +170,14 @@ export async function exportChapter(projectId: string, docId: string): Promise<v
   URL.revokeObjectURL(url);
 }
 
-export async function runTranslate(projectId: string, docId: string, sourceText: string, sourceLang: string, targetLang: string): Promise<any> {
+export async function runTranslate(projectId: string, docId: string, segmentId: string, sourceText: string, sourceLang: string, targetLang: string): Promise<any> {
   return await apiFetch('/api/translation/translate', {
     method: 'POST',
     body: JSON.stringify({
       project_id: projectId,
+      doc_id: docId,
+      segment_id: segmentId,
       source_text: sourceText,
-      segment_id: docId,
       source_lang: sourceLang,
       target_lang: targetLang,
       content_type: 'novel'
@@ -184,14 +185,9 @@ export async function runTranslate(projectId: string, docId: string, sourceText:
   });
 }
 
-export async function approveTranslation(projectId: string, sessionId: string, segmentId?: string): Promise<any> {
-  return await apiFetch(`/api/translation/approve`, {
-    method: 'POST',
-    body: JSON.stringify({
-      project_id: projectId,
-      session_id: sessionId,
-      segment_id: segmentId
-    })
+export async function approveTranslation(projectId: string, sessionId: string): Promise<any> {
+  return await apiFetch(`/api/translation/approve/${sessionId}`, {
+    method: 'POST'
   });
 }
 
@@ -339,5 +335,63 @@ export async function exportDoc(projectId: string, docId: string, format: string
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+export async function login(username: string, password: string): Promise<any> {
+  const params = new URLSearchParams();
+  params.append('username', username);
+  params.append('password', password);
+  
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || `Login failed: ${res.status}`);
+  }
+  const data = await res.json();
+  if (data.access_token) {
+    localStorage.setItem('drs_token', data.access_token);
+  }
+  return data;
+}
+
+export async function register(username: string, password: string, email?: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ username, password, email })
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || `Registration failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function logout(): Promise<void> {
+  const token = localStorage.getItem('drs_token');
+  if (token) {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout-token`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (e) {
+      console.error('Logout request failed:', e);
+    }
+  }
+  localStorage.removeItem('drs_token');
+  if (typeof window !== 'undefined') {
+    window.location.href = '/';
+  }
 }
 
