@@ -60,6 +60,9 @@ Source language: {source_lang}
 Target language: {target_lang}
 Content type: {content_type}
 
+Project Context:
+{project_context}
+
 {memory_context}
 """
 
@@ -107,6 +110,7 @@ class CandidateGenerator:
         target_lang: str,
         content_type: str = "general",
         temperature: float | None = None,
+        project_description: str = "",
     ) -> GenerationResult:
         # Step 1: Fetch instant raw translation from Google Translate
         raw_translation = await google_translate(source_text, source_lang, target_lang)
@@ -121,6 +125,7 @@ class CandidateGenerator:
             source_lang=source_lang,
             target_lang=target_lang,
             content_type=content_type,
+            project_context=project_description or "(No specific project context)",
             memory_context=memory_context or "(No approved memory yet for this project)",
         )
 

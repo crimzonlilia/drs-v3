@@ -143,6 +143,7 @@ async def init_db() -> None:
     CREATE TABLE IF NOT EXISTS projects (
         id            TEXT PRIMARY KEY,
         display_name  TEXT NOT NULL,
+        description   TEXT,
         source_lang   TEXT NOT NULL,
         target_lang   TEXT NOT NULL,
         content_type  TEXT NOT NULL,
@@ -203,6 +204,12 @@ async def init_db() -> None:
             
     await execute_batch(statements)
     
+    # Attempt to gracefully add description column for backward compatibility
+    try:
+        await execute_batch([("ALTER TABLE projects ADD COLUMN description TEXT;", [])])
+    except Exception:
+        pass  # Column likely already exists
+        
     # Create indexes
     idx_statements = [
         ("CREATE INDEX IF NOT EXISTS idx_segments_doc ON segments(project_id, doc_id);", []),

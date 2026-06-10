@@ -23,6 +23,7 @@ class TranslationAgent:
         source_lang: str,
         target_lang: str,
         content_type: str = "general",
+        project_description: str = "",
     ) -> GenerationResult:
         """
         Produce a high-quality translation draft.
@@ -32,6 +33,7 @@ class TranslationAgent:
             source_lang=source_lang,
             target_lang=target_lang,
             content_type=content_type,
+            project_description=project_description,
         )
 
     def load_project_memory(

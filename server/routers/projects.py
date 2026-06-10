@@ -57,8 +57,8 @@ async def create_project(data: ProjectCreate, current_user: dict = Depends(get_c
         
         # 1. Insert project into D1
         await execute_query(
-            "INSERT INTO projects (id, display_name, source_lang, target_lang, content_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            [project_id, data.project_id, data.source_lang, data.target_lang, data.content_type, created_at]
+            "INSERT INTO projects (id, display_name, description, source_lang, target_lang, content_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [project_id, data.project_id, data.description, data.source_lang, data.target_lang, data.content_type, created_at]
         )
         
         # 2. Add current user as owner in project_members D1
@@ -79,6 +79,7 @@ async def create_project(data: ProjectCreate, current_user: dict = Depends(get_c
         # 4. Save metadata project.yaml to R2
         config_data = {
             "project_id": project_id,
+            "description": data.description,
             "source_lang": data.source_lang,
             "target_lang": data.target_lang,
             "content_type": data.content_type,

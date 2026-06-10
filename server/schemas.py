@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class ProjectCreate(BaseModel):
     project_id: str = Field(..., example="one-piece-vi")
+    description: Optional[str] = Field("", example="Đây là dự án fanfic fgo richajon")
     source_lang: str = Field("ja", example="ja")
     target_lang: str = Field("vi", example="vi")
     content_type: str = Field("manga", example="manga")
@@ -15,6 +16,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectInfo(BaseModel):
     project_id: str
+    description: Optional[str] = ""
     source_lang: str
     target_lang: str
     content_type: str

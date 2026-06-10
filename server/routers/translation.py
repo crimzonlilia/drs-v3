@@ -104,6 +104,10 @@ async def run_translation(request: TranslateRequest, current_user: dict = Depend
     
     mem = ProjectMemory(request.project_id)
     
+    # Fetch project description
+    project_rows = await execute_query("SELECT description FROM projects WHERE id = ?", [request.project_id])
+    project_description = project_rows[0].get("description", "") if project_rows else ""
+    
     try:
         async with TranslationAgent(mem) as translation_agent, ConsistencyAuditor(mem) as consistency_auditor:
             # 1. Load memory & context
@@ -119,7 +123,8 @@ async def run_translation(request: TranslateRequest, current_user: dict = Depend
                 source_text=request.source_text,
                 source_lang=request.source_lang,
                 target_lang=request.target_lang,
-                content_type=request.content_type
+                content_type=request.content_type,
+                project_description=project_description
             )
             
             # 3. Audit (Consistency QA & Editorial QA)
