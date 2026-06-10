@@ -5,7 +5,6 @@ Memory Management and Wiki Seeding router using Cloudflare R2 and D1.
 from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from core.memory import ProjectMemory, GlossaryEntry, Entity, StyleRule
-from core.agents import FandomResearcher
 from server.schemas import SeedRequest, GlossaryAddInput, EntityAddInput, StyleRuleAddInput
 from server.auth import get_current_user
 from server.routers.projects import verify_project_member
@@ -87,28 +86,14 @@ async def seed_memory(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Run Wikipedia FandomResearcher to proactively gather context and seed project memory.
+    Mock endpoint for Wikipedia FandomResearcher (Deferred to Phase 2).
     """
     await verify_project_member(project_id, current_user["id"], "editor")
     
-    mem = ProjectMemory(project_id)
-    
-    async def run_seeding():
-        researcher = FandomResearcher(mem)
-        try:
-            await researcher.seed_project_memory(
-                topic=data.topic,
-                source_lang=data.source_lang,
-                target_lang=data.target_lang
-            )
-        finally:
-            await researcher.close()
-
-    background_tasks.add_task(run_seeding)
-    
+    # FandomResearcher has been removed from Phase 1.
     return {
-        "status": "pending",
-        "message": f"Background research task started for topic '{data.topic}'"
+        "status": "deferred",
+        "message": f"FandomResearcher is deferred to Phase 2. Task for '{data.topic}' was skipped."
     }
 
 
