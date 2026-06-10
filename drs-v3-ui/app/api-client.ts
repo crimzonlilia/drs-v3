@@ -337,3 +337,62 @@ export async function exportDoc(projectId: string, docId: string, format: string
   URL.revokeObjectURL(url);
 }
 
+export async function login(username: string, password: string): Promise<any> {
+  const params = new URLSearchParams();
+  params.append('username', username);
+  params.append('password', password);
+  
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || `Login failed: ${res.status}`);
+  }
+  const data = await res.json();
+  if (data.access_token) {
+    localStorage.setItem('drs_token', data.access_token);
+  }
+  return data;
+}
+
+export async function register(username: string, password: string, email?: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ username, password, email })
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || `Registration failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function logout(): Promise<void> {
+  const token = localStorage.getItem('drs_token');
+  if (token) {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout-token`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (e) {
+      console.error('Logout request failed:', e);
+    }
+  }
+  localStorage.removeItem('drs_token');
+  if (typeof window !== 'undefined') {
+    window.location.href = '/';
+  }
+}
+
+
