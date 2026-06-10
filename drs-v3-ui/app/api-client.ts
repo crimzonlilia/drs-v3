@@ -176,7 +176,7 @@ export async function runTranslate(projectId: string, docId: string, sourceText:
     body: JSON.stringify({
       project_id: projectId,
       source_text: sourceText,
-      chapter_or_doc: docId,
+      segment_id: docId,
       source_lang: sourceLang,
       target_lang: targetLang,
       content_type: 'novel'
@@ -184,10 +184,14 @@ export async function runTranslate(projectId: string, docId: string, sourceText:
   });
 }
 
-export async function approveTranslation(projectId: string, sessionId: string): Promise<any> {
-  return await apiFetch(`/api/translation/approve/${projectId}/${sessionId}`, {
+export async function approveTranslation(projectId: string, sessionId: string, segmentId?: string): Promise<any> {
+  return await apiFetch(`/api/translation/approve`, {
     method: 'POST',
-    body: JSON.stringify({})
+    body: JSON.stringify({
+      project_id: projectId,
+      session_id: sessionId,
+      segment_id: segmentId
+    })
   });
 }
 
