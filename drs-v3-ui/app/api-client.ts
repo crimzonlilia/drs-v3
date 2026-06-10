@@ -170,13 +170,14 @@ export async function exportChapter(projectId: string, docId: string): Promise<v
   URL.revokeObjectURL(url);
 }
 
-export async function runTranslate(projectId: string, docId: string, sourceText: string, sourceLang: string, targetLang: string): Promise<any> {
+export async function runTranslate(projectId: string, docId: string, segmentId: string, sourceText: string, sourceLang: string, targetLang: string): Promise<any> {
   return await apiFetch('/api/translation/translate', {
     method: 'POST',
     body: JSON.stringify({
       project_id: projectId,
+      doc_id: docId,
+      segment_id: segmentId,
       source_text: sourceText,
-      chapter_or_doc: docId,
       source_lang: sourceLang,
       target_lang: targetLang,
       content_type: 'novel'
@@ -185,9 +186,8 @@ export async function runTranslate(projectId: string, docId: string, sourceText:
 }
 
 export async function approveTranslation(projectId: string, sessionId: string): Promise<any> {
-  return await apiFetch(`/api/translation/approve/${projectId}/${sessionId}`, {
-    method: 'POST',
-    body: JSON.stringify({})
+  return await apiFetch(`/api/translation/approve/${sessionId}`, {
+    method: 'POST'
   });
 }
 
@@ -394,5 +394,4 @@ export async function logout(): Promise<void> {
     window.location.href = '/';
   }
 }
-
 
