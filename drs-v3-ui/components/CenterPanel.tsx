@@ -319,9 +319,7 @@ export default function CenterPanel({
   const wordCount = useMemo(() => {
     return translation.replace(/<[^>]*>/g, '').trim().split(/\s+/).filter(Boolean).length
   }, [translation])
-
   const originalSentences = useMemo(() => splitSentences(original), [original])
-  const translationSentences = useMemo(() => splitSentences(translation.replace(/<[^>]*>/g, '')), [translation])
 
   const handleAiTranslate = async () => {
     if (!original.trim()) {

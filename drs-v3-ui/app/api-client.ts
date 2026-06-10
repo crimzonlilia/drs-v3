@@ -170,7 +170,7 @@ export async function exportChapter(projectId: string, docId: string): Promise<v
   URL.revokeObjectURL(url);
 }
 
-export async function runTranslate(projectId: string, docId: string, segmentId: string, sourceText: string, sourceLang: string, targetLang: string): Promise<any> {
+export async function runTranslate(projectId: string, docId: string, sourceText: string, sourceLang: string, targetLang: string, segmentId = ""): Promise<any> {
   return await apiFetch('/api/translation/translate', {
     method: 'POST',
     body: JSON.stringify({
@@ -186,6 +186,7 @@ export async function runTranslate(projectId: string, docId: string, segmentId: 
 }
 
 export async function approveTranslation(projectId: string, sessionId: string): Promise<any> {
+  void projectId;
   return await apiFetch(`/api/translation/approve/${sessionId}`, {
     method: 'POST'
   });

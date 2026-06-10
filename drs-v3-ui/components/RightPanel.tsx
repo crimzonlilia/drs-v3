@@ -1,8 +1,8 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { BookOpen, ChevronDown, PanelRight, Plus } from 'lucide-react'
-import { addGlossaryTerm, getProjectMemory } from '@/app/api-client'
+import { BookOpen, PanelRight } from 'lucide-react'
+import { getProjectMemory } from '@/app/api-client'
 
 type WorkflowStep = 'read' | 'edit' | 'review' | 'approve'
 
@@ -43,15 +43,11 @@ const panelCopy: Record<WorkflowStep, { title: string; description: string }> = 
 export default function RightPanel({
   projectId,
   onClose,
-  onGlossaryUpdated,
   currentStep = 'read',
   pipelineStep = 'idle',
   pipelineLogs = []
 }: RightPanelProps) {
-  const [proposedSource, setProposedSource] = useState('')
-  const [proposedTarget, setProposedTarget] = useState('')
   const [memoryHits, setMemoryHits] = useState<MemoryHit[]>([])
-  const [showAddTerm, setShowAddTerm] = useState(false)
 
   const fetchMemory = async () => {
     if (!projectId) return
@@ -73,30 +69,6 @@ export default function RightPanel({
   useEffect(() => {
     fetchMemory()
   }, [projectId, currentStep])
-
-  const handlePromoteGlossary = async () => {
-    if (!proposedSource.trim() || !proposedTarget.trim()) {
-      alert('Add both source and target terms.')
-      return
-    }
-    try {
-      await addGlossaryTerm(projectId, {
-        source_term: proposedSource,
-        target_term: proposedTarget,
-        source_lang: 'ja',
-        target_lang: 'vi',
-        context_note: 'Added during review'
-      })
-      setProposedSource('')
-      setProposedTarget('')
-      setShowAddTerm(false)
-      fetchMemory()
-      onGlossaryUpdated?.()
-    } catch (err) {
-      console.error(err)
-      alert('Could not add glossary term.')
-    }
-  }
 
   return (
     <aside className="w-full h-full bg-themeSidebarWorkspace border-l border-themeBorder flex flex-col overflow-hidden">
