@@ -316,6 +316,12 @@ class ApprovalGate:
         if session.session_id in SESSION_CACHE:
             del SESSION_CACHE[session.session_id]
 
+        # Delete temporary draft files from R2
+        doc_prefix = f"projects/{session.project_id}/docs/{session.doc_id}/"
+        from core.utils.r2 import delete_file
+        delete_file(f"{doc_prefix}draft.md")
+        delete_file(f"{doc_prefix}draft_state.json")
+
         return result
 
     def reject(self, session: ApprovalSession) -> None:
@@ -324,6 +330,12 @@ class ApprovalGate:
         session.decided_at = datetime.now().isoformat(timespec="seconds")
         if session.session_id in SESSION_CACHE:
             del SESSION_CACHE[session.session_id]
+
+        # Delete temporary draft files from R2
+        doc_prefix = f"projects/{session.project_id}/docs/{session.doc_id}/"
+        from core.utils.r2 import delete_file
+        delete_file(f"{doc_prefix}draft.md")
+        delete_file(f"{doc_prefix}draft_state.json")
 
 
 def list_keys_with_prefix(prefix: str) -> List[str]:

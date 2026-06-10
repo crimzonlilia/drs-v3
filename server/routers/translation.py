@@ -10,8 +10,7 @@ from dataclasses import asdict
 
 from core.memory import ProjectMemory
 from core.workflow.approval_gate import ApprovalGate, Decision
-from core.agents import CandidateGenerator, Reviewer
-from core.checks import CheckSuite
+from core.agents import TranslationAgent, ConsistencyAuditor
 from server.schemas import TranslateRequest, TranslateResponse
 from server.auth import get_current_user
 from server.routers.projects import verify_project_member
@@ -98,7 +97,7 @@ def calculate_editorial_metrics(report, review_note: str) -> tuple[dict[str, flo
 async def run_translation(request: TranslateRequest, current_user: dict = Depends(get_current_user)):
     """
     Runs the translation flow (Generate -> Checks -> Reviewer)
-    and returns a review session waiting for user approval.
+    using the unified TranslationAgent and ConsistencyAuditor.
     """
     # Verify editor permissions
     await verify_project_member(request.project_id, current_user["id"], "editor")
@@ -106,90 +105,100 @@ async def run_translation(request: TranslateRequest, current_user: dict = Depend
     mem = ProjectMemory(request.project_id)
     
     try:
-        # Step 1: Generate
-        async with CandidateGenerator(mem) as generator:
-            gen_result = await generator.generate(
+        async with TranslationAgent(mem) as translation_agent, ConsistencyAuditor(mem) as consistency_auditor:
+            # 1. Load memory & context
+            memory_data = translation_agent.load_project_memory(
+                doc_id=request.doc_id,
+                source_text=request.source_text,
+                source_lang=request.source_lang,
+                target_lang=request.target_lang
+            )
+            
+            # 2. Generate
+            gen_result = await translation_agent.translate(
                 source_text=request.source_text,
                 source_lang=request.source_lang,
                 target_lang=request.target_lang,
                 content_type=request.content_type
             )
-
-        # Step 2: Consistency Checks
-        check_suite = CheckSuite(mem)
-        check_report = check_suite.run(
-            source_text=request.source_text,
-            draft_text=gen_result.draft,
-            source_lang=request.source_lang,
-            target_lang=request.target_lang,
-            content_type=request.content_type
-        )
-
-        # Step 3: AI Review Pass
-        async with Reviewer(mem) as reviewer:
-            review_result = await reviewer.review(
+            
+            # 3. Audit (Consistency QA & Editorial QA)
+            audit_result = await consistency_auditor.audit(
                 source_text=request.source_text,
-                draft=gen_result.draft,
-                check_report=check_report,
+                current_draft=gen_result.draft,
                 source_lang=request.source_lang,
                 target_lang=request.target_lang,
                 content_type=request.content_type
             )
-
-        # Step 4: Create Validation issues, Editorial metrics, and Memory Proposals
-        validation_issues = check_report_to_validation_issues(check_report, review_result.revised_draft)
-        editorial_score, editorial_feedback = calculate_editorial_metrics(check_report, review_result.review_note)
-        
-        # Populate initial memory proposals based on flags
-        memory_proposals = []
-        for f in check_report.term_flags:
-            memory_proposals.append({
-                "type": "glossary",
-                "source_term": f.source_term,
-                "target_term": f.expected,
-                "strictness": "flexible",
-                "note": f.suggestion
-            })
-        for f in check_report.entity_flags:
-            memory_proposals.append({
-                "type": "entity",
-                "entity_id": f.entity_id,
-                "canonical_name": f.canonical_name,
-                "source_name": f.source_name,
-                "strictness": "flexible",
-                "note": f.suggestion
-            })
-
-        # Step 5: Create Approval Session (State saved in RAM cache & auto-saved to R2)
-        gate = ApprovalGate(mem)
-        session = gate.create_session(
-            doc_id=request.doc_id,
-            source_text=request.source_text,
-            current_draft=review_result.revised_draft,
-            audit_report=review_result.review_note,
-            source_lang=request.source_lang,
-            target_lang=request.target_lang,
-            validation_issues=validation_issues,
-            editorial_score=editorial_score,
-            editorial_feedback=editorial_feedback,
-            memory_proposals=memory_proposals
-        )
-
-        return TranslateResponse(
-            session_id=session.session_id,
-            current_draft=review_result.revised_draft,
-            audit_report=review_result.review_note,
-            check_report={
-                "has_issues": check_report.has_issues,
-                "term_flags": [f"{f.source_term} (terminology)" for f in check_report.term_flags],
-                "entity_flags": [f"{f.entity_id} ({f.violation_type})" for f in check_report.entity_flags],
-                "style_flags": [f.rule_id for f in check_report.style_flags]
-            },
-            validation_issues=validation_issues,
-            editorial_score=editorial_score,
-            editorial_feedback=editorial_feedback,
-            memory_proposals=memory_proposals
-        )
+            
+            # 4. Populate memory proposals from audit report / checks
+            check_report = consistency_auditor.check_suite.run(
+                source_text=request.source_text,
+                draft_text=gen_result.draft,
+                source_lang=request.source_lang,
+                target_lang=request.target_lang,
+                content_type=request.content_type
+            )
+            
+            memory_proposals = []
+            for f in check_report.term_flags:
+                memory_proposals.append({
+                    "type": "glossary",
+                    "source_term": f.source_term,
+                    "target_term": f.expected,
+                    "strictness": "flexible",
+                    "note": f.suggestion
+                })
+            for f in check_report.entity_flags:
+                memory_proposals.append({
+                    "type": "entity",
+                    "entity_id": f.entity_id,
+                    "canonical_name": f.canonical_name,
+                    "source_name": f.source_name,
+                    "strictness": "flexible",
+                    "note": f.suggestion
+                })
+                
+            # Submit proposals to session cache
+            gate = ApprovalGate(mem)
+            session = gate.create_session(
+                doc_id=request.doc_id,
+                source_text=request.source_text,
+                current_draft=gen_result.draft,
+                audit_report=audit_result.audit_report,
+                source_lang=request.source_lang,
+                target_lang=request.target_lang,
+                validation_issues=audit_result.validation_issues,
+                editorial_score=audit_result.editorial_score,
+                editorial_feedback=audit_result.editorial_feedback,
+                memory_proposals=memory_proposals
+            )
+            
+            # Fetch context details
+            context = await translation_agent.build_translation_context(request.doc_id, request.segment_id or "")
+            
+            return TranslateResponse(
+                session_id=session.session_id,
+                project_id=request.project_id,
+                doc_id=request.doc_id,
+                segment_id=request.segment_id,
+                source_lang=request.source_lang,
+                target_lang=request.target_lang,
+                source_text=request.source_text,
+                translation_context={
+                    "filtered_glossary": memory_data["filtered_glossary"],
+                    "filtered_entities": memory_data["filtered_entities"],
+                    "project_styles": memory_data["project_styles"],
+                    "sliding_window": context.get("sliding_window", []),
+                    "style_corrections": memory_data.get("style_corrections", [])
+                },
+                current_draft=session.current_draft,
+                memory_proposals=session.memory_proposals,
+                validation_issues=session.validation_issues,
+                editorial_score=session.editorial_score,
+                editorial_feedback=session.editorial_feedback,
+                audit_report=session.audit_report
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Pipeline processing failed: {e}")
 
@@ -265,8 +274,8 @@ async def refine_session(session_id: str, data: dict, current_user: dict = Depen
     # Run candidate generator refinement or mock it if model/API fails
     try:
         mem = ProjectMemory(session.project_id)
-        async with CandidateGenerator(mem) as generator:
-            ref_result = await generator.revise(
+        async with TranslationAgent(mem) as agent:
+            ref_result = await agent.revise(
                 source_text=session.source_text,
                 previous_draft=session.current_draft,
                 feedback=instruction,

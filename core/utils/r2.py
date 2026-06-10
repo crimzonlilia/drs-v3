@@ -5,7 +5,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Cloudflare R2 Credentials
 CF_R2_ACCOUNT_ID = os.getenv("CF_R2_ACCOUNT_ID")

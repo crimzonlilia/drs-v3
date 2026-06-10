@@ -67,9 +67,10 @@ class Pipeline:
         self.target_lang = target_lang
         self.content_type = content_type
 
-        self.generator = CandidateGenerator(memory)
-        self.reviewer = Reviewer(memory)
-        self.check_suite = CheckSuite(memory)
+        from core.agents.translation_agent import TranslationAgent
+        from core.agents.consistency_auditor import ConsistencyAuditor
+        self.translation_agent = TranslationAgent(memory)
+        self.consistency_auditor = ConsistencyAuditor(memory)
         self.gate = ApprovalGate(memory)
 
     # ------------------------------------------------------------------ #
@@ -85,64 +86,92 @@ class Pipeline:
     ) -> PipelineResult:
 
         # Step 1: Generate candidate
-        print(f"[1/4] Generating draft ({self.generator.model})...")
-        gen_result = await self.generator.generate(
+        print(f"[1/4] Generating draft ({self.translation_agent.generator.model})...")
+        gen_result = await self.translation_agent.translate(
             source_text, self.source_lang, self.target_lang, self.content_type
         )
 
-        # Step 2: Rule-based checks
-        print("[2/4] Running consistency checks...")
-        check_report = self.check_suite.run(
+        # Step 2 & 3: Consistency checks & AI Review pass via ConsistencyAuditor
+        print("[2/4] and [3/4] Running ConsistencyAuditor checks and review...")
+        audit_result = await self.consistency_auditor.audit(
+            source_text=source_text,
+            current_draft=gen_result.draft,
+            source_lang=self.source_lang,
+            target_lang=self.target_lang,
+            content_type=self.content_type
+        )
+
+        # Step 4: Human review via callback
+        print("[4/4] Awaiting human review...")
+        
+        # Populate initial memory proposals based on audit or source text match
+        memory_proposals = []
+        # Fallback flags for backward compatibility of PipelineResult
+        check_report = self.consistency_auditor.check_suite.run(
             source_text=source_text,
             draft_text=gen_result.draft,
             source_lang=self.source_lang,
             target_lang=self.target_lang,
             content_type=self.content_type,
         )
-        print(check_report.summary())
+        
+        for f in check_report.term_flags:
+            memory_proposals.append({
+                "type": "glossary",
+                "source_term": f.source_term,
+                "target_term": f.expected,
+                "strictness": "flexible",
+                "note": f.suggestion
+            })
+        for f in check_report.entity_flags:
+            memory_proposals.append({
+                "type": "entity",
+                "entity_id": f.entity_id,
+                "canonical_name": f.canonical_name,
+                "source_name": f.source_name,
+                "strictness": "flexible",
+                "note": f.suggestion
+            })
 
-        # Step 3: AI review pass (skipped if no issues)
-        if check_report.has_issues:
-            print(f"[3/4] Reviewer pass ({self.reviewer.model})...")
-        else:
-            print("[3/4] No issues — skipping reviewer pass.")
-        review_result = await self.reviewer.review(
-            source_text=source_text,
-            draft=gen_result.draft,
-            check_report=check_report,
-            source_lang=self.source_lang,
-            target_lang=self.target_lang,
-            content_type=self.content_type,
-        )
-
-        # Step 4: Human review via callback
-        print("[4/4] Awaiting human review...")
         session = self.gate.create_session(
             doc_id=doc_id,
             source_text=source_text,
-            current_draft=review_result.revised_draft,
-            audit_report=review_result.review_note,
+            current_draft=gen_result.draft,
+            audit_report=audit_result.audit_report,
             source_lang=self.source_lang,
-            target_lang=self.target_lang
+            target_lang=self.target_lang,
+            validation_issues=audit_result.validation_issues,
+            editorial_score=audit_result.editorial_score,
+            editorial_feedback=audit_result.editorial_feedback,
+            memory_proposals=memory_proposals
         )
 
-        final_text, memory_proposals = await review_callback(session)
+        final_text, callback_proposals = await review_callback(session)
 
         if final_text:
             session.current_draft = final_text
-            session.memory_proposals = memory_proposals
+            session.memory_proposals = callback_proposals
             promotion = await self.gate.approve(session)
         else:
             self.gate.reject(session)
             promotion = None
 
+        from core.agents import ReviewResult
+        # Fake a ReviewResult for PipelineResult backward compatibility
+        mock_review_result = ReviewResult(
+            revised_draft=gen_result.draft,
+            review_note=audit_result.audit_report,
+            model=self.consistency_auditor.reviewer.model
+        )
+
         result = PipelineResult(
             session=session,
             generation=gen_result,
             check_report=check_report,
-            review=review_result,
+            review=mock_review_result,
             promotion=promotion,
         )
+
 
         # Save approved output to R2
         if save_output and result.approved:
@@ -195,8 +224,8 @@ class Pipeline:
         return self
 
     async def __aexit__(self, *args):
-        await self.generator.close()
-        await self.reviewer.close()
+        await self.translation_agent.close()
+        await self.consistency_auditor.close()
 
 
 # Alias for Orchestration role

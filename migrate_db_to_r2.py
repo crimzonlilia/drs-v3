@@ -50,9 +50,9 @@ async def migrate():
                 ContentType=mime
             )
             success_count += 1
-            print(f"✓ Successfully migrated: {key}")
+            print(f"[OK] Successfully migrated: {key}")
         except Exception as e:
-            print(f"✗ Failed to migrate {key}: {e}")
+            print(f"[FAIL] Failed to migrate {key}: {e}")
 
     print(f"\nMigration complete: Successfully copied {success_count}/{len(rows)} files to Cloudflare R2!")
 

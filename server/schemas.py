@@ -23,8 +23,9 @@ class ProjectInfo(BaseModel):
 
 class TranslateRequest(BaseModel):
     project_id: str
-    source_text: str
     doc_id: str
+    segment_id: str
+    source_text: str
     source_lang: str
     target_lang: str
     content_type: str = "general"
@@ -32,13 +33,19 @@ class TranslateRequest(BaseModel):
 
 class TranslateResponse(BaseModel):
     session_id: str
+    project_id: str
+    doc_id: str
+    segment_id: str
+    source_lang: str
+    target_lang: str
+    source_text: str
+    translation_context: Dict[str, Any] = {}
     current_draft: str
+    memory_proposals: List[Dict[str, Any]] = []
+    validation_issues: List[Dict[str, Any]] = []
+    editorial_score: Dict[str, float] = {}
+    editorial_feedback: List[str] = []
     audit_report: str
-    check_report: Dict[str, Any]
-    validation_issues: Optional[List[Dict[str, Any]]] = None
-    editorial_score: Optional[Dict[str, float]] = None
-    editorial_feedback: Optional[List[str]] = None
-    memory_proposals: Optional[List[Dict[str, Any]]] = None
 
 
 

@@ -87,8 +87,11 @@ class CandidateGenerator:
     def __init__(self, memory: ProjectMemory, model: str | None = None):
         self.memory = memory
         self.model = model or cfg.generator_model
+        base_url = cfg.base_url
+        if not base_url.endswith("/"):
+            base_url += "/"
         self._client = httpx.AsyncClient(
-            base_url=cfg.base_url,
+            base_url=base_url,
             headers={
                 "Authorization": f"Bearer {cfg.api_key}",
                 "HTTP-Referer": "https://github.com/drs-v3",  # OpenRouter best practice
@@ -137,7 +140,7 @@ class CandidateGenerator:
         }
 
         try:
-            response = await self._client.post("/chat/completions", json=payload)
+            response = await self._client.post("chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()
             draft = data["choices"][0]["message"]["content"].strip()
@@ -148,17 +151,7 @@ class CandidateGenerator:
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             data = {"choices": [{"message": {"content": draft}}]}
 
-        # Kick off background search to enrich project context/fandom based on translation text
-        import asyncio
-        from core.agents.fandom_researcher import FandomResearcher
-        async def _enrich_bg():
-            try:
-                researcher = FandomResearcher(self.memory)
-                await researcher.enrich_context_from_text(source_text, source_lang, target_lang)
-                await researcher.close()
-            except Exception as bg_e:
-                print(f"Background enrich failed: {bg_e}")
-        asyncio.create_task(_enrich_bg())
+
 
         return GenerationResult(
             draft=draft,
@@ -225,7 +218,7 @@ Output ONLY the revised translation. No explanations, no notes.
             ],
         }
 
-        response = await self._client.post("/chat/completions", json=payload)
+        response = await self._client.post("chat/completions", json=payload)
         response.raise_for_status()
         data = response.json()
 

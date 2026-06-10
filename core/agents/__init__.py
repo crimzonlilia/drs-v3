@@ -8,26 +8,23 @@ from .reviewer import (
     ReviewResult,
 )
 
-from .feedback_extractor import (
-    FeedbackExtractor,
-    ExtractedCorrection,
-)
-
 from .layout_translator import (
     LayoutTranslator,
     LayoutTextBlock,
 )
 
-from .fandom_researcher import FandomResearcher
+from .translation_agent import TranslationAgent
+from .consistency_auditor import ConsistencyAuditor
+from .layout_agent import LayoutAgent
 
 __all__ = [
     "CandidateGenerator",
     "GenerationResult",
     "Reviewer",
     "ReviewResult",
-    "FeedbackExtractor",
-    "ExtractedCorrection",
     "LayoutTranslator",
     "LayoutTextBlock",
-    "FandomResearcher",
-]
+    "TranslationAgent",
+    "ConsistencyAuditor",
+    "LayoutAgent",
+]

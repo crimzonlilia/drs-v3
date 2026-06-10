@@ -54,8 +54,11 @@ class LayoutTranslator:
         self.memory = memory
         # We use a vision-capable model. Default to google/gemini-flash-1.5:free
         self.model = model or "google/gemini-flash-1.5:free"
+        base_url = cfg.base_url
+        if not base_url.endswith("/"):
+            base_url += "/"
         self._client = httpx.AsyncClient(
-            base_url=cfg.base_url,
+            base_url=base_url,
             headers={
                 "Authorization": f"Bearer {cfg.api_key}",
                 "HTTP-Referer": "https://github.com/drs-v3",
@@ -135,7 +138,7 @@ Do not include any markdown wrappers (like ```json), explanations, or notes.
             ]
         }
 
-        response = await self._client.post("/chat/completions", json=payload)
+        response = await self._client.post("chat/completions", json=payload)
         response.raise_for_status()
         data = response.json()
 
@@ -194,19 +197,7 @@ Do not include any markdown wrappers (like ```json), explanations, or notes.
         except Exception as e:
             print(f"Failed to refine translations via CandidateGenerator: {e}. Keeping Google Translate defaults.")
 
-        # Kick off background search to enrich project context based on OCRed text
-        try:
-            import asyncio
-            from core.agents.fandom_researcher import FandomResearcher
-            async def _enrich_bg():
-                ocr_full_text = "\n".join(b.source_text for b in blocks if b.source_text)
-                if ocr_full_text.strip():
-                    researcher = FandomResearcher(self.memory)
-                    await researcher.enrich_context_from_text(ocr_full_text, source_lang, target_lang)
-                    await researcher.close()
-            asyncio.create_task(_enrich_bg())
-        except Exception as e:
-            print(f"Failed to start background enrichment task: {e}")
+
 
         return blocks
 
@@ -262,7 +253,7 @@ Provide a concise, bulleted review report in Vietnamese. Highlight any specific 
             ]
         }
 
-        response = await self._client.post("/chat/completions", json=payload)
+        response = await self._client.post("chat/completions", json=payload)
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"].strip()

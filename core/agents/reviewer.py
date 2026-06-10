@@ -89,8 +89,11 @@ class Reviewer:
     def __init__(self, memory: ProjectMemory, model: str | None = None):
         self.memory = memory
         self.model = model or cfg.reviewer_model
+        base_url = cfg.base_url
+        if not base_url.endswith("/"):
+            base_url += "/"
         self._client = httpx.AsyncClient(
-            base_url=cfg.base_url,
+            base_url=base_url,
             headers={
                 "Authorization": f"Bearer {cfg.api_key}",
                 "HTTP-Referer": "https://github.com/drs-v3",
@@ -138,7 +141,7 @@ class Reviewer:
         }
 
         try:
-            response = await self._client.post("/chat/completions", json=payload)
+            response = await self._client.post("chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"].strip()

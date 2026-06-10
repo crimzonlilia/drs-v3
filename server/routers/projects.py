@@ -8,7 +8,7 @@ import yaml
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends, Response
 
 from core.memory import ProjectMemory
@@ -135,8 +135,9 @@ async def get_project(project_id: str, current_user: dict = Depends(get_current_
     )
 
 
+@router.get("/{project_id}/docs", response_model=List[str])
 @router.get("/{project_id}/chapters", response_model=List[str])
-async def list_project_chapters(project_id: str, current_user: dict = Depends(get_current_user)):
+async def list_project_docs(project_id: str, current_user: dict = Depends(get_current_user)):
     """
     List all document IDs inside a project by listing R2 keys.
     """
@@ -155,20 +156,30 @@ async def list_project_chapters(project_id: str, current_user: dict = Depends(ge
     return sorted(list(docs))
 
 
+@router.get("/{project_id}/docs/{doc_id}")
 @router.get("/{project_id}/chapters/{chapter_id}")
-async def get_chapter_content(project_id: str, chapter_id: str, current_user: dict = Depends(get_current_user)):
+async def get_doc_content(
+    project_id: str,
+    doc_id: Optional[str] = None,
+    chapter_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Get the content of a specific chapter from R2 / D1.
+    Get the content of a specific document from R2 / D1.
     """
     await verify_project_member(project_id, current_user["id"], "viewer")
     
-    doc_prefix = f"projects/{project_id}/docs/{chapter_id}/"
+    actual_doc_id = doc_id or chapter_id
+    if not actual_doc_id:
+        raise HTTPException(status_code=400, detail="Missing document/chapter identifier")
+        
+    doc_prefix = f"projects/{project_id}/docs/{actual_doc_id}/"
     draft_content = read_text(f"{doc_prefix}draft.md") or ""
     
     # Load approved content. Try segments database first.
     rows = await execute_query(
         "SELECT target_text FROM segments WHERE project_id = ? AND doc_id = ?",
-        [project_id, chapter_id]
+        [project_id, actual_doc_id]
     )
     
     approved_content = ""
@@ -191,7 +202,8 @@ async def get_chapter_content(project_id: str, chapter_id: str, current_user: di
                 
     return {
         "project_id": project_id,
-        "chapter_id": chapter_id,
+        "chapter_id": actual_doc_id,
+        "doc_id": actual_doc_id,
         "draft": draft_content,
         "approved": approved_content
     }
@@ -218,15 +230,29 @@ def convert_html_to_markdown(html_str: str) -> str:
     return md
 
 
+@router.post("/{project_id}/docs/{doc_id}")
 @router.post("/{project_id}/chapters/{chapter_id}")
-async def save_chapter_content(project_id: str, chapter_id: str, payload: dict, current_user: dict = Depends(get_current_user)):
+async def save_doc_content(
+    project_id: str,
+    doc_id: Optional[str] = None,
+    chapter_id: Optional[str] = None,
+    payload: dict = None,
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Save or update draft/approved text of a chapter in R2.
+    Save or update draft/approved text of a document in R2.
     """
     await verify_project_member(project_id, current_user["id"], "editor")
     
-    doc_prefix = f"projects/{project_id}/docs/{chapter_id}/"
+    actual_doc_id = doc_id or chapter_id
+    if not actual_doc_id:
+        raise HTTPException(status_code=400, detail="Missing document/chapter identifier")
+        
+    doc_prefix = f"projects/{project_id}/docs/{actual_doc_id}/"
     
+    if payload is None:
+        payload = {}
+        
     if "draft" in payload:
         draft_content = payload["draft"]
         if "<" in draft_content and ">" in draft_content:
@@ -249,7 +275,7 @@ async def save_chapter_content(project_id: str, chapter_id: str, payload: dict, 
                 pass
                 
         output_data = {
-            "doc_id": chapter_id,
+            "doc_id": actual_doc_id,
             "version": v_num,
             "approved_text": approved_content,
             "decided_at": datetime.now().isoformat()
@@ -272,7 +298,7 @@ async def save_chapter_content(project_id: str, chapter_id: str, payload: dict, 
         """
         await execute_query(sql, [
             project_id,
-            chapter_id,
+            actual_doc_id,
             "seg_001",
             "paragraph",
             approved_content, # source fallback
@@ -281,7 +307,7 @@ async def save_chapter_content(project_id: str, chapter_id: str, payload: dict, 
             latest_meta["approved_at"]
         ])
         
-    return {"status": "success", "message": "Chapter saved successfully"}
+    return {"status": "success", "message": "Document saved successfully"}
 
 
 @router.post("/{project_id}/rebuild-index")
@@ -338,19 +364,29 @@ async def rebuild_master_index(project_id: str, current_user: dict = Depends(get
     return {"status": "success", "message": f"Successfully rebuilt indices for {len(doc_segments)} documents"}
 
 
+@router.get("/{project_id}/docs/{doc_id}/export")
 @router.get("/{project_id}/chapters/{chapter_id}/export")
-async def export_chapter_content(project_id: str, chapter_id: str, current_user: dict = Depends(get_current_user)):
+async def export_doc_content(
+    project_id: str,
+    doc_id: Optional[str] = None,
+    chapter_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Export chapter content as a clean Markdown download.
+    Export document content as a clean Markdown download.
     """
     await verify_project_member(project_id, current_user["id"], "viewer")
     
-    doc_prefix = f"projects/{project_id}/docs/{chapter_id}/"
+    actual_doc_id = doc_id or chapter_id
+    if not actual_doc_id:
+        raise HTTPException(status_code=400, detail="Missing document/chapter identifier")
+        
+    doc_prefix = f"projects/{project_id}/docs/{actual_doc_id}/"
     
     # Check D1 segments table first
     rows = await execute_query(
         "SELECT target_text FROM segments WHERE project_id = ? AND doc_id = ?",
-        [project_id, chapter_id]
+        [project_id, actual_doc_id]
     )
     
     content = ""
@@ -376,10 +412,10 @@ async def export_chapter_content(project_id: str, chapter_id: str, current_user:
         content = read_text(f"{doc_prefix}draft.md") or ""
         
     if not content:
-        raise HTTPException(status_code=404, detail="Chapter content not found")
+        raise HTTPException(status_code=404, detail="Document content not found")
         
     return Response(
         content=content,
         media_type="text/markdown",
-        headers={"Content-Disposition": f"attachment; filename={chapter_id}.md"}
+        headers={"Content-Disposition": f"attachment; filename={actual_doc_id}.md"}
     )

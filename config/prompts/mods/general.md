@@ -1,0 +1,1 @@
+Follow general high-quality localization guidelines.
