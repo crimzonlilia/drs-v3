@@ -48,10 +48,10 @@ export default function LandingHeader() {
           )}
         </button>
 
-        <Link href="/dashboard" className="px-4 py-2 border border-themeBorder rounded-lg text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-themeText">
+        <Link href="/login" className="px-4 py-2 border border-themeBorder rounded-lg text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-themeText">
           Log in
         </Link>
-        <Link href="/dashboard" className="px-4 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-lg text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors">
+        <Link href="/login" className="px-4 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-lg text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors">
           Sign up
         </Link>
       </div>

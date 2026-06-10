@@ -61,11 +61,11 @@ export default function Home() {
 
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row gap-4 mb-16">
-          <Link href="/dashboard" className="px-8 py-4 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-base font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 shadow-lg hover:shadow-purple-500/10 transition-all flex items-center justify-center gap-2">
+          <Link href="/login" className="px-8 py-4 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-base font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 shadow-lg hover:shadow-purple-500/10 transition-all flex items-center justify-center gap-2">
             Explore Dashboard
             <ArrowRight size={18} />
           </Link>
-          <Link href="/dashboard" className="px-8 py-4 glass border border-themeBorder rounded-xl text-base font-semibold hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors text-themeText">
+          <Link href="/login" className="px-8 py-4 glass border border-themeBorder rounded-xl text-base font-semibold hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors text-themeText">
             Join for free
           </Link>
         </div>
