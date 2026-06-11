@@ -1,4 +1,5 @@
 import os
+import sys
 import asyncio
 import base64
 import hmac
@@ -16,6 +17,27 @@ def get_password_hash(password: str) -> str:
     return f"{iterations}${base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}"
 
 async def seed():
+    # Set sys.stdout to handle UTF-8 print
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
+    # Clean old records and folders
+    print("Cleaning up old database records...")
+    await execute_query("DELETE FROM segments")
+    await execute_query("DELETE FROM r2_emulated_files")
+    await execute_query("DELETE FROM project_members")
+    await execute_query("DELETE FROM projects")
+    
+    import shutil
+    mock_r2_path = os.path.join("memory_store", "r2_mock")
+    if os.path.exists(mock_r2_path):
+        print("Cleaning up mock R2 store directory...")
+        try:
+            shutil.rmtree(mock_r2_path)
+        except Exception:
+            pass
+    os.makedirs(mock_r2_path, exist_ok=True)
+
     # 1. Initialize schema
     print("Initializing database tables...")
     await init_db()
@@ -202,36 +224,9 @@ async def seed():
     write_text(f"projects/{proj_id}/docs/{doc_id}/doc.yaml", yaml.dump(doc_meta, sort_keys=False))
     
     # Save original text asset
-    source_text = 'Khi dịch chuyển, Jo bị lạc khỏi Richa vì con cá hồi. "Nếu phải đánh nhau thì phiền đấy" - Jo vừa nghĩ vừa nhìn quanh thì thấy một cánh cửa.'
+    source_text = '転移した際、ジョーは鮭のせいでリチャとはぐれてしまった。「戦うとなると面倒だな」とジョーは思いながら辺りを見回すと、扉が見えた。'
     write_text(f"projects/{proj_id}/docs/{doc_id}/assets/source.txt", source_text)
     
-    # Save a draft translation output version
-    draft_translation = {
-        "doc_id": doc_id,
-        "segments": [
-            {
-                "segment_id": "seg_001",
-                "source": "Khi dịch chuyển, Jo bị lạc khỏi Richa vì con cá hồi.",
-                "target": "Khi dịch chuyển, Jo bị lạc khỏi Richa vì con cá hồi."
-            }
-        ]
-    }
-    write_text(
-        f"projects/{proj_id}/docs/{doc_id}/outputs/translation_v1.json",
-        yaml.dump(draft_translation, allow_unicode=True)
-    )
-    
-    # Save latest metadata
-    latest_meta = {
-        "latest_version": 1,
-        "approved_by": "admin",
-        "approved_at": created_at,
-        "segment_count": 1
-    }
-    write_text(
-        f"projects/{proj_id}/docs/{doc_id}/outputs/metadata.json",
-        yaml.dump(latest_meta)
-    )
     print(f"✓ Initialized document '{doc_id}' for project '{proj_id}'")
     print("\nDatabase seeding completed successfully.")
 

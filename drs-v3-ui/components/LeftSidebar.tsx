@@ -1,8 +1,8 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { FileText, PanelLeft, Plus } from 'lucide-react'
-import { listChapters } from '@/app/api-client'
+import { FileText, PanelLeft, Plus, Trash2 } from 'lucide-react'
+import { listChapters, deleteChapter } from '@/app/api-client'
 
 interface LeftSidebarProps {
   projectId: string
@@ -40,6 +40,27 @@ export default function LeftSidebar({
       active = false
     }
   }, [projectId])
+
+  const handleDeleteFile = async (filename: string) => {
+    if (!confirm(`Bạn có chắc chắn muốn xóa tài liệu "${filename}" không? Thao tác này sẽ xóa vĩnh viễn dữ liệu trên hệ thống.`)) {
+      return
+    }
+    try {
+      await deleteChapter(projectId, filename)
+      const newList = fileList.filter(f => f !== filename)
+      setFileList(newList)
+      if (activeFile === filename) {
+        if (newList.length > 0) {
+          onFileSelect(newList[0])
+        } else {
+          onFileSelect('')
+        }
+      }
+      alert(`Đã xóa tài liệu "${filename}" thành công.`)
+    } catch (err: any) {
+      alert(`Lỗi khi xóa tài liệu: ${err.message}`)
+    }
+  }
 
   const handleAddFile = () => {
     const filename = prompt('New document name')
@@ -81,20 +102,37 @@ export default function LeftSidebar({
         </div>
 
         <div className="space-y-1">
-          {fileList.map(file => (
-            <button
-              key={file}
-              onClick={() => onFileSelect(file)}
-              className={`w-full min-w-0 rounded-md px-2.5 py-2 text-left flex items-center gap-2 ${
-                activeFile === file
-                  ? 'bg-themeCard text-themeText'
-                  : 'text-themeMuted hover:bg-themeCard/60 hover:text-themeText'
-              }`}
-            >
-              <FileText size={14} className="shrink-0" />
-              <span className="truncate text-sm">{file}</span>
-            </button>
-          ))}
+          {fileList.map(file => {
+            const isActive = activeFile === file
+            return (
+              <div
+                key={file}
+                className={`group w-full min-w-0 rounded-md px-2.5 py-1.5 flex items-center justify-between gap-2 transition-colors ${
+                  isActive
+                    ? 'bg-themeCard text-themeText font-medium'
+                    : 'text-themeMuted hover:bg-themeCard/60 hover:text-themeText'
+                }`}
+              >
+                <button
+                  onClick={() => onFileSelect(file)}
+                  className="flex items-center gap-2 min-w-0 flex-1 text-left select-none"
+                >
+                  <FileText size={14} className="shrink-0" />
+                  <span className="truncate text-sm">{file}</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDeleteFile(file)
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-all shrink-0"
+                  title="Xóa tài liệu"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )
+          })}
         </div>
       </div>
     </aside>

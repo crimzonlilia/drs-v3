@@ -14,6 +14,7 @@ from core.agents import TranslationAgent, ConsistencyAuditor
 from server.schemas import TranslateRequest, TranslateResponse
 from server.auth import get_current_user
 from server.routers.projects import verify_project_member
+from core.utils.db import execute_query
 
 router = APIRouter(prefix="/api/translation", tags=["Translation"])
 
@@ -179,6 +180,18 @@ async def run_translation(request: TranslateRequest, current_user: dict = Depend
                 memory_proposals=memory_proposals
             )
             
+            # Set pipeline status for text translation (first class status tracking)
+            session.pipeline_status = {
+                "upload": "success",
+                "ocr": "success",  # marked success/skipped
+                "context_retrieval": "success",
+                "draft_translation": "success",
+                "review": "running",
+                "approve": "idle",
+                "render": "idle"
+            }
+            gate.save_translation_draft(session)
+            
             # Fetch context details
             context = await translation_agent.build_translation_context(request.doc_id, request.segment_id or "")
             
@@ -235,6 +248,12 @@ async def approve_translation(
             approved_by_user_id=current_user["id"]
         )
         
+        # Update pipeline status to approved
+        session.pipeline_status["approve"] = "success"
+        if session.pipeline_status.get("render") == "idle":
+             pass # keep idle if no rendering
+        gate.save_translation_draft(session)
+        
         return {
             "status": "success",
             "message": "Translation approved and promoted successfully",
@@ -259,6 +278,32 @@ async def get_session(session_id: str, current_user: dict = Depends(get_current_
     await verify_project_member(session.project_id, current_user["id"], "viewer")
     
     return asdict(session)
+
+
+@router.get("/session/{session_id}/status")
+async def get_session_status(session_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Get the current pipeline status of a session.
+    """
+    from core.workflow.approval_gate import SESSION_CACHE
+    session = SESSION_CACHE.get(session_id)
+    if not session:
+        # Try cold resume
+        try:
+            await resume_session_endpoint(session_id=session_id, current_user=current_user)
+            session = SESSION_CACHE.get(session_id)
+        except Exception:
+            pass
+            
+    if not session:
+        raise HTTPException(status_code=404, detail="Approval session not found or expired")
+        
+    await verify_project_member(session.project_id, current_user["id"], "viewer")
+    return {
+        "session_id": session.session_id,
+        "pipeline_status": session.pipeline_status,
+        "pipeline_error": session.pipeline_error
+    }
 
 
 @router.post("/session/{session_id}/refine")

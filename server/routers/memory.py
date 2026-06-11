@@ -65,7 +65,9 @@ async def get_project_memory(project_id: str, current_user: dict = Depends(get_c
             "original_text": c.get("original_draft"),
             "corrected_text": c.get("approved_version"),
             "logged_at": c.get("approved_at"),
-            "note": c.get("note")
+            "note": c.get("note"),
+            "status": "pending",
+            "correction_type": "style"
         }
         for c in mem.load_style_corrections()
     ]

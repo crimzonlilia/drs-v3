@@ -26,7 +26,7 @@ class ProjectInfo(BaseModel):
 class TranslateRequest(BaseModel):
     project_id: str
     doc_id: str
-    segment_id: str
+    segment_id: Optional[str] = ""
     source_text: str
     source_lang: str
     target_lang: str
@@ -37,7 +37,7 @@ class TranslateResponse(BaseModel):
     session_id: str
     project_id: str
     doc_id: str
-    segment_id: str
+    segment_id: Optional[str] = ""
     source_lang: str
     target_lang: str
     source_text: str

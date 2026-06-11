@@ -9,13 +9,14 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Depends, Response
+from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File
+from fastapi.responses import StreamingResponse
 
 from core.memory import ProjectMemory
 from server.schemas import ProjectCreate, ProjectInfo
 from server.auth import get_current_user
 from core.utils.db import execute_query
-from core.utils.r2 import read_text, write_text, list_files
+from core.utils.r2 import read_text, write_text, list_files, write_binary, read_binary, delete_file
 
 router = APIRouter(prefix="/api/projects", tags=["Project"])
 
@@ -179,13 +180,19 @@ async def get_doc_content(
     
     # Load approved content. Try segments database first.
     rows = await execute_query(
-        "SELECT target_text FROM segments WHERE project_id = ? AND doc_id = ?",
+        "SELECT source_text, target_text FROM segments WHERE project_id = ? AND doc_id = ?",
         [project_id, actual_doc_id]
     )
     
     approved_content = ""
+    source_content = ""
     if rows:
         approved_content = "\n\n".join([r["target_text"] for r in rows if r["target_text"]])
+        source_content = "\n\n".join([r["source_text"] for r in rows if r["source_text"]])
+        
+    if not source_content:
+        # Fallback to R2 assets/source.txt
+        source_content = read_text(f"{doc_prefix}assets/source.txt") or ""
         
     if not approved_content:
         # Fallback to R2 outputs
@@ -205,6 +212,7 @@ async def get_doc_content(
         "project_id": project_id,
         "chapter_id": actual_doc_id,
         "doc_id": actual_doc_id,
+        "source_text": source_content,
         "draft": draft_content,
         "approved": approved_content
     }
@@ -309,6 +317,39 @@ async def save_doc_content(
         ])
         
     return {"status": "success", "message": "Document saved successfully"}
+
+
+@router.delete("/{project_id}/docs/{doc_id}")
+@router.delete("/{project_id}/chapters/{chapter_id}")
+async def delete_project_doc(
+    project_id: str,
+    doc_id: Optional[str] = None,
+    chapter_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a document/chapter from R2 bucket and clean up database records.
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    actual_doc_id = doc_id or chapter_id
+    if not actual_doc_id:
+        raise HTTPException(status_code=400, detail="Missing document/chapter identifier")
+        
+    doc_prefix = f"projects/{project_id}/docs/{actual_doc_id}/"
+    
+    # Delete R2 files
+    files_to_delete = list_files(doc_prefix)
+    for file in files_to_delete:
+        delete_file(file)
+        
+    # Delete D1 segments
+    await execute_query(
+        "DELETE FROM segments WHERE project_id = ? AND doc_id = ?",
+        [project_id, actual_doc_id]
+    )
+    
+    return {"status": "success", "message": f"Document {actual_doc_id} deleted successfully"}
 
 
 @router.post("/{project_id}/rebuild-index")
@@ -419,4 +460,71 @@ async def export_doc_content(
         content=content,
         media_type="text/markdown",
         headers={"Content-Disposition": f"attachment; filename={actual_doc_id}.md"}
+    )
+
+
+@router.post("/{project_id}/fonts/upload")
+async def upload_font(
+    project_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    filename = file.filename
+    if not (filename.lower().endswith(".ttf") or filename.lower().endswith(".otf")):
+        raise HTTPException(status_code=400, detail="Only .ttf and .otf font files are supported")
+        
+    contents = await file.read()
+    r2_path = f"projects/{project_id}/fonts/{filename}"
+    write_binary(r2_path, contents, file.content_type or "font/ttf")
+    
+    return {
+        "status": "success",
+        "message": f"Font {filename} uploaded successfully to R2",
+        "font_name": filename
+    }
+
+
+@router.get("/{project_id}/fonts")
+async def list_project_fonts(
+    project_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    await verify_project_member(project_id, current_user["id"], "viewer")
+    
+    prefix = f"projects/{project_id}/fonts/"
+    r2_files = list_files(prefix)
+    
+    custom_fonts = []
+    for f in r2_files:
+        parts = f.split("/")
+        if parts[-1]:
+            custom_fonts.append(parts[-1])
+            
+    defaults = ["Arial", "Georgia", "Times New Roman", "Courier New", "Impact", "Noto Sans", "Noto Sans JP", "Noto Serif"]
+    
+    return {
+        "default_fonts": defaults,
+        "custom_fonts": custom_fonts
+    }
+
+
+@router.get("/{project_id}/fonts/download/{font_name}")
+async def download_font(
+    project_id: str,
+    font_name: str
+):
+    r2_path = f"projects/{project_id}/fonts/{font_name}"
+    font_bytes = read_binary(r2_path)
+    if not font_bytes:
+        raise HTTPException(status_code=404, detail="Font file not found in R2")
+        
+    media_type = "font/otf" if font_name.lower().endswith(".otf") else "font/ttf"
+    
+    import io
+    return StreamingResponse(
+        io.BytesIO(font_bytes),
+        media_type=media_type,
+        headers={"Content-Disposition": f"inline; filename={font_name}"}
     )

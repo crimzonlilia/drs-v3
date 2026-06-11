@@ -51,6 +51,16 @@ class ApprovalSession:
     editorial_score: Dict[str, float] = field(default_factory=dict)
     editorial_feedback: List[str] = field(default_factory=list)
     memory_proposals: List[Dict[str, Any]] = field(default_factory=list) # Changed from corrections
+    pipeline_status: Dict[str, str] = field(default_factory=lambda: {
+        "upload": "idle",
+        "ocr": "idle",
+        "context_retrieval": "idle",
+        "draft_translation": "idle",
+        "review": "idle",
+        "approve": "idle",
+        "render": "idle"
+    })
+    pipeline_error: str = ""
 
     def is_complete(self) -> bool:
         return self.decision is not None
@@ -58,6 +68,18 @@ class ApprovalSession:
 def session_from_dict(d: dict) -> ApprovalSession:
     decision_val = d.get("decision")
     decision = Decision(decision_val) if decision_val else None
+    
+    # Set default pipeline status if missing
+    default_status = {
+        "upload": "idle",
+        "ocr": "idle",
+        "context_retrieval": "idle",
+        "draft_translation": "idle",
+        "review": "idle",
+        "approve": "idle",
+        "render": "idle"
+    }
+    
     return ApprovalSession(
         session_id=d["session_id"],
         project_id=d["project_id"],
@@ -73,7 +95,9 @@ def session_from_dict(d: dict) -> ApprovalSession:
         validation_issues=d.get("validation_issues", []),
         editorial_score=d.get("editorial_score", {}),
         editorial_feedback=d.get("editorial_feedback", []),
-        memory_proposals=d.get("memory_proposals", [])
+        memory_proposals=d.get("memory_proposals", []),
+        pipeline_status=d.get("pipeline_status", default_status),
+        pipeline_error=d.get("pipeline_error", "")
     )
 
 @dataclass

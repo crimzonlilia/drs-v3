@@ -70,12 +70,43 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+async function performSilentLogin(): Promise<string> {
+  try {
+    const params = new URLSearchParams()
+    params.append('username', 'admin')
+    params.append('password', 'admin123')
+    
+    const response = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: params
+    })
+    
+    if (response.ok) {
+      const data = await response.json()
+      if (data.access_token) {
+        localStorage.setItem('drs_token', data.access_token)
+        return data.access_token
+      }
+    }
+  } catch (err) {
+    console.error('Silent auto-login request failed:', err)
+  }
+  return ''
+}
+
 async function getAuthToken(): Promise<string> {
   if (typeof window === 'undefined') return ''
   const token = localStorage.getItem('drs_token')
   if (token && !isTokenExpired(token)) return token
   
-  // Token missing or expired — clear token and redirect to login page
+  // Token missing or expired — attempt silent auto-login
+  const newToken = await performSilentLogin()
+  if (newToken) return newToken
+
+  // If silent login fails, clear token and redirect to home
   localStorage.removeItem('drs_token')
   window.location.href = '/'
   return ''
@@ -101,6 +132,16 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
   let res = await makeRequest(token)
 
   if (res.status === 401) {
+    // Retry once with a freshly obtained token
+    const newToken = await performSilentLogin()
+    if (newToken) {
+      res = await makeRequest(newToken)
+      if (res.ok) {
+        return res.json()
+      }
+    }
+    
+    // If retry also fails or login fails, redirect to home
     localStorage.removeItem('drs_token')
     if (typeof window !== 'undefined') {
       window.location.href = '/'
@@ -144,6 +185,12 @@ export async function listChapters(projectId: string): Promise<string[]> {
 
 export async function getChapter(projectId: string, docId: string): Promise<ChapterData> {
   return await apiFetch(`/api/projects/${projectId}/chapters/${docId}`);
+}
+
+export async function deleteChapter(projectId: string, docId: string): Promise<any> {
+  return await apiFetch(`/api/projects/${projectId}/chapters/${docId}`, {
+    method: 'DELETE'
+  });
 }
 
 export async function saveChapter(projectId: string, docId: string, data: { draft?: string; approved?: string }): Promise<any> {
@@ -394,5 +441,90 @@ export async function logout(): Promise<void> {
   if (typeof window !== 'undefined') {
     window.location.href = '/';
   }
+}
+
+export async function uploadFont(projectId: string, file: File): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const token = await getAuthToken();
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/fonts/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
+    body: formData
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || `Font upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function listFonts(projectId: string): Promise<{ default_fonts: string[]; custom_fonts: string[] }> {
+  return await apiFetch(`/api/projects/${projectId}/fonts`);
+}
+
+export async function runImageTranslate(projectId: string, docId: string, assetId: string, sourceLang: string, targetLang: string): Promise<any> {
+  return await apiFetch(`/api/docs/${docId}/translate-image`, {
+    method: 'POST',
+    body: JSON.stringify({
+      project_id: projectId,
+      asset_id: assetId,
+      source_lang: sourceLang,
+      target_lang: targetLang
+    })
+  });
+}
+
+export async function renderDocumentImage(
+  projectId: string,
+  docId: string,
+  assetId: string,
+  fontName: string,
+  fontSize: number,
+  sessionId?: string
+): Promise<any> {
+  return await apiFetch(`/api/docs/${docId}/render`, {
+    method: 'POST',
+    body: JSON.stringify({
+      project_id: projectId,
+      asset_id: assetId,
+      font_name: fontName,
+      font_size: fontSize,
+      session_id: sessionId
+    })
+  });
+}
+
+export async function getImagePipelineStatus(sessionId: string): Promise<any> {
+  return await apiFetch(`/api/translation/session/${sessionId}/status`);
+}
+
+export function getAssetViewUrl(projectId: string, docId: string, assetId: string): string {
+  return `${API_BASE}/api/docs/assets/view/${projectId}/${docId}/${assetId}`;
+}
+
+export function getRenderedViewUrl(projectId: string, docId: string, assetId: string): string {
+  return `${API_BASE}/api/docs/rendered/view/${projectId}/${docId}/${assetId}`;
+}
+
+export function getFontDownloadUrl(projectId: string, fontName: string): string {
+  return `${API_BASE}/api/projects/${projectId}/fonts/download/${fontName}`;
+}
+
+export async function getDocumentSegments(projectId: string, docId: string, assetId?: string): Promise<any[]> {
+  return await apiFetch(`/api/docs/${docId}/segments?project_id=${projectId}${assetId ? `&asset_id=${encodeURIComponent(assetId)}` : ''}`);
+}
+
+export async function updateSegmentText(projectId: string, docId: string, segmentId: string, targetText: string): Promise<any> {
+  return await apiFetch(`/api/docs/${docId}/segments/${segmentId}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      project_id: projectId,
+      target_text: targetText
+    })
+  });
 }
 

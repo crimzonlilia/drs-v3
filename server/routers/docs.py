@@ -8,8 +8,8 @@ import json
 import hashlib
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Response
-from PIL import Image
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Response, BackgroundTasks
+from PIL import Image, ImageDraw, ImageFont
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -20,6 +20,7 @@ from server.routers.projects import verify_project_member
 from core.utils.db import execute_query, execute_batch
 from core.utils.r2 import read_text, write_binary, write_text, read_binary
 from core.ocr.router import OCRRouter
+from server.utils.graphics import render_manga_text_layers
 
 router = APIRouter(prefix="/api/docs", tags=["Documents"])
 
@@ -315,4 +316,321 @@ async def run_ocr_batch(
         "message": "OCR batch detection completed successfully",
         "detected_bubbles": total_bubbles,
         "language": source_lang
+    }
+
+
+# Helper functions moved to server/utils/graphics.py
+
+
+async def run_image_translation_pipeline_task(
+    project_id: str,
+    doc_id: str,
+    asset_id: str,
+    source_lang: str,
+    target_lang: str,
+    session_id: str
+):
+    from core.workflow.approval_gate import SESSION_CACHE
+    from core.ocr.router import OCRRouter
+    from core.memory import ProjectMemory
+    from core.agents import TranslationAgent
+    import tempfile
+    
+    session = SESSION_CACHE.get(session_id)
+    if not session:
+        return
+        
+    try:
+        # 1. OCR Stage
+        session.pipeline_status["ocr"] = "running"
+        
+        r2_path = f"projects/{project_id}/docs/{doc_id}/assets/{asset_id}"
+        image_bytes = read_binary(r2_path)
+        if not image_bytes:
+            raise ValueError(f"Asset image {asset_id} not found in R2")
+            
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+            temp_file.write(image_bytes)
+            temp_file_path = temp_file.name
+            
+        try:
+            provider = OCRRouter.get_provider(source_lang)
+            blocks = await provider.extract(temp_file_path)
+            
+            ocr_data = {
+                "provider": provider.__class__.__name__.replace("Provider", "").lower(),
+                "provider_version": "1.0.0",
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "blocks": [{"text": b.text, "bbox": b.bbox, "confidence": b.confidence} for b in blocks]
+            }
+            extracted_key = f"projects/{project_id}/docs/{doc_id}/extracted/{asset_id}.json"
+            write_text(extracted_key, json.dumps(ocr_data, indent=2, ensure_ascii=False))
+            
+            db_statements = [
+                ("DELETE FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?", [project_id, doc_id, asset_id])
+            ]
+            for block in blocks:
+                coord_str = "".join(f"{round(c, 3):.3f}" for c in block.bbox)
+                h = hashlib.sha1(coord_str.encode('utf-8')).hexdigest()[:6]
+                segment_id = f"{asset_id.split('.')[0]}_{h}"
+                db_statements.append((
+                    """
+                    INSERT INTO segments (
+                        project_id, doc_id, segment_id, segment_type, source_text, target_text, asset_id, bbox
+                    ) VALUES (?, ?, ?, 'bubble', ?, '', ?, ?)
+                    """,
+                    [project_id, doc_id, segment_id, block.text, asset_id, json.dumps(block.bbox)]
+                ))
+            await execute_batch(db_statements)
+        finally:
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+                
+        session.pipeline_status["ocr"] = "success"
+        session.pipeline_status["context_retrieval"] = "running"
+        
+        # 2. Context Retrieval Stage
+        mem = ProjectMemory(project_id)
+        session.pipeline_status["context_retrieval"] = "success"
+        session.pipeline_status["draft_translation"] = "running"
+        
+        # 3. Draft Translation Stage
+        segments = await execute_query(
+            "SELECT segment_id, source_text FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?",
+            [project_id, doc_id, asset_id]
+        )
+        
+        project_rows = await execute_query("SELECT description FROM projects WHERE id = ?", [project_id])
+        project_description = project_rows[0].get("description", "") if project_rows else ""
+        
+        async with TranslationAgent(mem) as translation_agent:
+            for seg in segments:
+                source_txt = seg["source_text"]
+                seg_id = seg["segment_id"]
+                if not source_txt.strip():
+                    continue
+                    
+                gen_result = await translation_agent.translate(
+                    source_text=source_txt,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    content_type="comic",
+                    project_description=project_description
+                )
+                
+                await execute_query(
+                    "UPDATE segments SET target_text = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
+                    [gen_result.draft, project_id, doc_id, seg_id]
+                )
+                
+        session.pipeline_status["draft_translation"] = "success"
+        session.pipeline_status["review"] = "running"
+        
+    except Exception as e:
+        for stage in ["ocr", "context_retrieval", "draft_translation"]:
+            if session.pipeline_status.get(stage) == "running":
+                session.pipeline_status[stage] = "failed"
+                break
+        session.pipeline_error = str(e)
+        
+    finally:
+        try:
+            mem = ProjectMemory(project_id)
+            from core.workflow.approval_gate import ApprovalGate
+            gate = ApprovalGate(mem)
+            gate.save_translation_draft(session)
+        except Exception:
+            pass
+
+
+@router.post("/{doc_id}/translate-image")
+async def translate_image(
+    doc_id: str,
+    request: dict,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
+    project_id = request.get("project_id")
+    asset_id = request.get("asset_id")
+    source_lang = request.get("source_lang", "ja")
+    target_lang = request.get("target_lang", "vi")
+    
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    # Initialize a new ApprovalSession
+    from core.memory import ProjectMemory
+    from core.workflow.approval_gate import ApprovalGate
+    
+    mem = ProjectMemory(project_id)
+    gate = ApprovalGate(mem)
+    
+    # Create the session in RAM & R2
+    session = gate.create_session(
+        doc_id=doc_id,
+        source_text=f"Image Translation: {asset_id}",
+        current_draft="",
+        source_lang=source_lang,
+        target_lang=target_lang
+    )
+    
+    # Initialize pipeline status
+    session.pipeline_status = {
+        "upload": "success",
+        "ocr": "idle",
+        "context_retrieval": "idle",
+        "draft_translation": "idle",
+        "review": "idle",
+        "approve": "idle",
+        "render": "idle"
+    }
+    gate.save_translation_draft(session)
+    
+    # Add pipeline run task to BackgroundTasks
+    background_tasks.add_task(
+        run_image_translation_pipeline_task,
+        project_id=project_id,
+        doc_id=doc_id,
+        asset_id=asset_id,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        session_id=session.session_id
+    )
+    
+    return {
+        "status": "success",
+        "session_id": session.session_id,
+        "message": "Image translation pipeline started in the background"
+    }
+
+
+@router.post("/{doc_id}/render")
+async def render_document_image(
+    doc_id: str,
+    request: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    project_id = request.get("project_id")
+    asset_id = request.get("asset_id")
+    font_name = request.get("font_name", "Arial")
+    font_size = request.get("font_size", 18)
+    session_id = request.get("session_id")
+    
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    r2_path = f"projects/{project_id}/docs/{doc_id}/assets/{asset_id}"
+    image_bytes = read_binary(r2_path)
+    if not image_bytes:
+        raise HTTPException(status_code=404, detail=f"Asset image {asset_id} not found in R2")
+        
+    segments = await execute_query(
+        "SELECT segment_id, source_text, target_text, bbox FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?",
+        [project_id, doc_id, asset_id]
+    )
+    
+    rendered_bytes = render_manga_text_layers(
+        image_bytes=image_bytes,
+        segments=segments,
+        project_id=project_id,
+        font_name=font_name,
+        font_size=font_size
+    )
+    
+    rendered_key = f"projects/{project_id}/docs/{doc_id}/rendered/{asset_id}"
+    write_binary(rendered_key, rendered_bytes, "image/png")
+    
+    if session_id:
+        from core.workflow.approval_gate import SESSION_CACHE
+        session = SESSION_CACHE.get(session_id)
+        if session:
+            session.pipeline_status["render"] = "success"
+            from core.workflow.approval_gate import ApprovalGate
+            mem = ProjectMemory(project_id)
+            gate = ApprovalGate(mem)
+            gate.save_translation_draft(session)
+            
+    return {
+        "status": "success",
+        "message": f"Rendered image saved successfully for {asset_id}",
+        "rendered_url": f"/api/docs/rendered/view/{project_id}/{doc_id}/{asset_id}"
+    }
+
+
+@router.get("/assets/view/{project_id}/{doc_id}/{asset_id}")
+async def view_asset_image(
+    project_id: str,
+    doc_id: str,
+    asset_id: str
+):
+    r2_path = f"projects/{project_id}/docs/{doc_id}/assets/{asset_id}"
+    img_bytes = read_binary(r2_path)
+    if not img_bytes:
+        raise HTTPException(status_code=404, detail="Asset image not found")
+        
+    media_type = "image/png"
+    if asset_id.lower().endswith(".jpg") or asset_id.lower().endswith(".jpeg"):
+        media_type = "image/jpeg"
+    elif asset_id.lower().endswith(".webp"):
+        media_type = "image/webp"
+        
+    return StreamingResponse(io.BytesIO(img_bytes), media_type=media_type)
+
+
+@router.get("/rendered/view/{project_id}/{doc_id}/{asset_id}")
+async def view_rendered_image(
+    project_id: str,
+    doc_id: str,
+    asset_id: str
+):
+    r2_path = f"projects/{project_id}/docs/{doc_id}/rendered/{asset_id}"
+    img_bytes = read_binary(r2_path)
+    if not img_bytes:
+        raise HTTPException(status_code=404, detail="Rendered image not found")
+        
+    media_type = "image/png"
+    return StreamingResponse(io.BytesIO(img_bytes), media_type=media_type)
+
+
+@router.get("/{doc_id}/segments")
+async def get_document_segments(
+    doc_id: str,
+    project_id: str,
+    asset_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    await verify_project_member(project_id, current_user["id"], "viewer")
+    
+    if asset_id:
+        rows = await execute_query(
+            "SELECT segment_id, source_text, target_text, bbox, asset_id, approved_by, approved_at FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?",
+            [project_id, doc_id, asset_id]
+        )
+    else:
+        rows = await execute_query(
+            "SELECT segment_id, source_text, target_text, bbox, asset_id, approved_by, approved_at FROM segments WHERE project_id = ? AND doc_id = ?",
+            [project_id, doc_id]
+        )
+        
+    return rows
+
+
+@router.put("/{doc_id}/segments/{segment_id}")
+async def update_segment_text(
+    doc_id: str,
+    segment_id: str,
+    request: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    project_id = request.get("project_id")
+    target_text = request.get("target_text", "")
+    
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    await execute_query(
+        "UPDATE segments SET target_text = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
+        [target_text, project_id, doc_id, segment_id]
+    )
+    
+    return {
+        "status": "success",
+        "message": f"Segment {segment_id} updated successfully"
     }
