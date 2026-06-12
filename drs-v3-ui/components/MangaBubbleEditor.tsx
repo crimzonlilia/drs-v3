@@ -25,8 +25,6 @@ export default function MangaBubbleEditor({
   setViewMode,
   handleSegmentChange,
   handleApproveAndRender,
-  selectedFont,
-  fontSize,
   isApproving = false
 }: MangaBubbleEditorProps) {
   return (

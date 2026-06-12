@@ -24,6 +24,7 @@ import {
   runTranslate,
   saveChapter,
   refineTranslation,
+  saveSessionDraft,
   uploadFont,
   listFonts,
   runImageTranslate,
@@ -114,8 +115,8 @@ interface CenterPanelProps {
   onToggleLeft?: () => void;
   currentStep: WorkflowStep;
   onStepChange: (step: WorkflowStep) => void;
-  pipelineStep: string;
-  setPipelineStep: (step: string) => void;
+  pipelineStep: 'idle' | 'ready' | 'translating' | 'polishing' | 'qa_check';
+  setPipelineStep: (step: 'idle' | 'ready' | 'translating' | 'polishing' | 'qa_check') => void;
   pipelineLogs: string[];
   setPipelineLogs: (logs: string[] | ((prev: string[]) => string[])) => void;
 }
@@ -134,18 +135,15 @@ export default function CenterPanel({
   showLeftSidebar = true,
   onToggleLeft,
   onStepChange,
-  pipelineStep,
-  setPipelineStep,
-  setPipelineLogs
+  setPipelineStep
 }: CenterPanelProps) {
   const [original, setOriginal] = useState('')
   const [translation, setTranslation] = useState('')
-  const [sourceLang, setSourceLang] = useState('ja')
+  const [sourceLang] = useState('ja')
   const [targetLang, setTargetLang] = useState('vi')
   const [isTranslating, setIsTranslating] = useState(false)
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
   const [isEditingOriginal, setIsEditingOriginal] = useState(false)
-  const [isApproved, setIsApproved] = useState(false)
 
   // Chat Timeline States
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -237,7 +235,6 @@ export default function CenterPanel({
         const targetText = data.approved || ''
         setOriginal(sourceText)
         setTranslation(targetText)
-        setIsApproved(!!data.approved)
         setPipelineStep('idle')
         onStepChange('read')
         
@@ -332,7 +329,7 @@ export default function CenterPanel({
 
     async function poll() {
       try {
-        const res = await getImagePipelineStatus(activeSessionId)
+        const res = await getImagePipelineStatus(activeSessionId as string)
         if (!active) return
         
         if (res && res.pipeline_status) {
@@ -438,7 +435,7 @@ export default function CenterPanel({
   }
 
   // Start text translation pipeline
-  const startTranslationPipeline = async (rawPrompt: string, sourceText: string, sentenceIdx: number, instruction?: string) => {
+  const startTranslationPipeline = async (rawPrompt: string, sourceText: string, instruction?: string) => {
     const messageId = `msg_${Date.now()}`
       
     const userMsg: ChatMessage = {
@@ -705,10 +702,10 @@ export default function CenterPanel({
       
       if (isTranslation) {
         if (originalText) {
-          startTranslationPipeline(chatInput, originalText, chatMessages.length / 2, instruction)
+          startTranslationPipeline(chatInput, originalText, instruction)
         } else {
           // Treat user input text as the source text directly
-          startTranslationPipeline(chatInput, chatInput, chatMessages.length / 2)
+          startTranslationPipeline(chatInput, chatInput)
         }
       } else {
         // Run general chatbot conversation assistant
@@ -719,7 +716,7 @@ export default function CenterPanel({
   }
 
   // Save segment inline editing
-  const handleSegmentChange = async (msgId: string, assetId: string, segmentId: string, newText: string) => {
+  const handleSegmentChange = async (msgId: string, _assetId: string, segmentId: string, newText: string) => {
     setChatMessages(prev => prev.map(m => {
       if (m.id === msgId && m.segments) {
         return {
@@ -772,7 +769,6 @@ export default function CenterPanel({
     try {
       await approveTranslation(projectId, sessionId)
       setChatMessages(prev => prev.map(m => m.id === msgId ? { ...m, isApproved: true } : m))
-      setIsApproved(true)
       setPipelineStatus(prev => ({ 
         ...prev, 
         review: 'success',

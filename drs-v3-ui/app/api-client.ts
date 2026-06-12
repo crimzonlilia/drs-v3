@@ -56,6 +56,7 @@ export interface ChapterData {
   project_id: string;
   chapter_id: string;
   doc_id?: string;
+  source_text?: string;
   draft: string;
   approved: string;
 }
