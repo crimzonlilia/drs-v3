@@ -44,7 +44,7 @@ async def extract_via_llm(image_path: str, source_lang: str) -> list[OCRBlock]:
         with open(image_path, "rb") as f:
             base64_data = base64.b64encode(f.read()).decode("utf-8")
             
-        model = cfg.generator_model or "google/gemini-2.5-flash"
+        model = os.getenv("OCR_MODEL", "google/gemini-2.5-flash")
         headers = {
             "Authorization": f"Bearer {api_key}",
             "HTTP-Referer": "https://github.com/drs-v3",
@@ -78,7 +78,8 @@ async def extract_via_llm(image_path: str, source_lang: str) -> list[OCRBlock]:
                     ]
                 }
             ],
-            "temperature": 0.1
+            "temperature": 0.1,
+            "max_tokens": 2048
         }
         
         url = base_url

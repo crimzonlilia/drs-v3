@@ -1,0 +1,5 @@
+# Heavy Local OCR dependencies (Use only on machines with GPU/sufficient RAM)
+# Do not add to requirements.txt if deploying to Render free tier (will cause OOM or build timeout)
+manga-ocr>=0.1.11
+paddleocr>=2.7.3
+paddlepaddle>=2.5.0
