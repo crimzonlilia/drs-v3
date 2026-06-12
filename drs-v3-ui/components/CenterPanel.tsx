@@ -338,6 +338,22 @@ export default function CenterPanel({
         if (res && res.pipeline_status) {
           setPipelineStatus(res.pipeline_status)
           
+          // Update message text dynamically based on running pipeline stage
+          const runningStageEntry = Object.entries(res.pipeline_status).find(([_, val]) => val === 'running')
+          if (runningStageEntry) {
+            const stage = runningStageEntry[0]
+            let stageText = `Đang xử lý hình ảnh...`
+            if (stage === 'ocr') stageText = 'Đang trích xuất văn bản từ hình ảnh (OCR)...'
+            if (stage === 'context_retrieval') stageText = 'Đang nạp bối cảnh và bộ nhớ dự án...'
+            if (stage === 'draft_translation') stageText = 'Đang tiến hành dịch thô các bong bóng thoại...'
+            if (stage === 'review') stageText = 'Đang rà soát và tinh chỉnh bản dịch...'
+            
+            setChatMessages(prev => prev.map(m => m.sessionId === activeSessionId ? {
+              ...m,
+              text: stageText
+            } : m))
+          }
+          
           const errorMsg = res.pipeline_error || ""
           if (errorMsg) {
             setPipelineStep('idle')
@@ -352,7 +368,7 @@ export default function CenterPanel({
           }
 
           const hasFailed = Object.values(res.pipeline_status).some(val => val === 'failed')
-          const isReviewing = res.pipeline_status.review === 'running' || res.pipeline_status.review === 'success'
+          const isReviewing = res.pipeline_status.review === 'success'
 
           if (hasFailed) {
             setPipelineStep('idle')
@@ -731,6 +747,7 @@ export default function CenterPanel({
       setChatMessages(prev => prev.map(m => m.id === msgId ? { ...m, isApproved: true } : m))
       setPipelineStatus(prev => ({
         ...prev,
+        review: 'success',
         approve: 'success',
         render: 'running'
       }))
@@ -756,7 +773,11 @@ export default function CenterPanel({
       await approveTranslation(projectId, sessionId)
       setChatMessages(prev => prev.map(m => m.id === msgId ? { ...m, isApproved: true } : m))
       setIsApproved(true)
-      setPipelineStatus(prev => ({ ...prev, approve: 'success' }))
+      setPipelineStatus(prev => ({ 
+        ...prev, 
+        review: 'success',
+        approve: 'success' 
+      }))
     } catch (err: any) {
       alert(`Lỗi khi duyệt bản dịch: ${err.message}`)
     } finally {
@@ -1072,22 +1093,28 @@ export default function CenterPanel({
                           />
                         )}
 
-                        {/* QA validation feedback */}
-                        {msg.status === 'done' && msg.validationIssues && msg.validationIssues.length > 0 && (
+                        {/* QA validation feedback - Temporarily hidden
+                        msg.status === 'done' && msg.validationIssues && msg.validationIssues.length > 0 && (
                           <div className="p-2.5 bg-amber-500/5 rounded-lg border border-amber-500/10 space-y-1.5">
                             <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider flex items-center gap-1 select-none">
                               <AlertTriangle size={11} />
                               <span>Cảnh báo QA:</span>
                             </div>
                             <div className="space-y-1">
-                              {msg.validationIssues.map((issue, i) => (
-                                <p key={i} className="text-[10.5px] text-slate-600 dark:text-slate-400 leading-normal">
-                                  • {issue.message} ({issue.severity || 'Cảnh báo'})
-                                </p>
-                              ))}
+                              {msg.validationIssues.map((issue, i) => {
+                                const messageText = issue.detail || issue.message || 'Phát hiện vấn đề chưa xác định';
+                                const typeText = issue.violation_type || issue.severity || 'Cảnh báo';
+                                const suggestionText = issue.suggestion ? ` (Gợi ý: ${issue.suggestion})` : '';
+                                return (
+                                  <p key={i} className="text-[10.5px] text-slate-600 dark:text-slate-400 leading-normal">
+                                    • {messageText}{suggestionText} <span className="text-[9.5px] text-slate-400">[{typeText}]</span>
+                                  </p>
+                                );
+                              })}
                             </div>
                           </div>
-                        )}
+                        )
+                        */}
 
                         {/* Direct editorial action buttons for text */}
                         {msg.status === 'done' && !msg.isImageWorkflow && msg.sessionId && (

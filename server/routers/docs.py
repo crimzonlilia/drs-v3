@@ -338,10 +338,12 @@ async def run_image_translation_pipeline_task(
     
     session = SESSION_CACHE.get(session_id)
     if not session:
+        print(f"[IMAGE PIPELINE] Error: Session {session_id} not found in SESSION_CACHE.")
         return
         
     try:
         # 1. OCR Stage
+        print(f"[IMAGE PIPELINE] Starting OCR stage for asset: {asset_id}")
         session.pipeline_status["ocr"] = "running"
         
         r2_path = f"projects/{project_id}/docs/{doc_id}/assets/{asset_id}"
@@ -355,7 +357,9 @@ async def run_image_translation_pipeline_task(
             
         try:
             provider = OCRRouter.get_provider(source_lang)
+            print(f"[IMAGE PIPELINE] Using OCR provider: {provider.__class__.__name__}")
             blocks = await provider.extract(temp_file_path)
+            print(f"[IMAGE PIPELINE] OCR extracted {len(blocks)} text blocks.")
             
             ocr_data = {
                 "provider": provider.__class__.__name__.replace("Provider", "").lower(),
@@ -382,6 +386,7 @@ async def run_image_translation_pipeline_task(
                     [project_id, doc_id, segment_id, block.text, asset_id, json.dumps(block.bbox)]
                 ))
             await execute_batch(db_statements)
+            print(f"[IMAGE PIPELINE] Saved {len(blocks)} segments to SQLite/D1.")
         finally:
             if os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
@@ -390,11 +395,13 @@ async def run_image_translation_pipeline_task(
         session.pipeline_status["context_retrieval"] = "running"
         
         # 2. Context Retrieval Stage
+        print(f"[IMAGE PIPELINE] Loading project memory context for project: {project_id}")
         mem = ProjectMemory(project_id)
         session.pipeline_status["context_retrieval"] = "success"
         session.pipeline_status["draft_translation"] = "running"
         
         # 3. Draft Translation Stage
+        print(f"[IMAGE PIPELINE] Starting draft translation stage.")
         segments = await execute_query(
             "SELECT segment_id, source_text FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?",
             [project_id, doc_id, asset_id]
@@ -403,30 +410,38 @@ async def run_image_translation_pipeline_task(
         project_rows = await execute_query("SELECT description FROM projects WHERE id = ?", [project_id])
         project_description = project_rows[0].get("description", "") if project_rows else ""
         
-        async with TranslationAgent(mem) as translation_agent:
-            for seg in segments:
-                source_txt = seg["source_text"]
-                seg_id = seg["segment_id"]
-                if not source_txt.strip():
-                    continue
+        if not segments:
+            print(f"[IMAGE PIPELINE] No text segments to translate for asset {asset_id}.")
+        else:
+            print(f"[IMAGE PIPELINE] Found {len(segments)} segments to translate.")
+            async with TranslationAgent(mem) as translation_agent:
+                for seg in segments:
+                    source_txt = seg["source_text"]
+                    seg_id = seg["segment_id"]
+                    if not source_txt.strip():
+                        continue
+                        
+                    print(f"[IMAGE PIPELINE] Translating segment: {source_txt}")
+                    gen_result = await translation_agent.translate(
+                        source_text=source_txt,
+                        source_lang=source_lang,
+                        target_lang=target_lang,
+                        content_type="comic",
+                        project_description=project_description
+                    )
+                    print(f"[IMAGE PIPELINE] Translated to: {gen_result.draft}")
                     
-                gen_result = await translation_agent.translate(
-                    source_text=source_txt,
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                    content_type="comic",
-                    project_description=project_description
-                )
-                
-                await execute_query(
-                    "UPDATE segments SET target_text = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
-                    [gen_result.draft, project_id, doc_id, seg_id]
-                )
-                
+                    await execute_query(
+                        "UPDATE segments SET target_text = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
+                        [gen_result.draft, project_id, doc_id, seg_id]
+                    )
+                    
         session.pipeline_status["draft_translation"] = "success"
-        session.pipeline_status["review"] = "running"
+        session.pipeline_status["review"] = "success"
+        print(f"[IMAGE PIPELINE] Finished pipeline successfully for asset: {asset_id}")
         
     except Exception as e:
+        print(f"[IMAGE PIPELINE] Exception occurred: {e}")
         for stage in ["ocr", "context_retrieval", "draft_translation"]:
             if session.pipeline_status.get(stage) == "running":
                 session.pipeline_status[stage] = "failed"
@@ -439,8 +454,8 @@ async def run_image_translation_pipeline_task(
             from core.workflow.approval_gate import ApprovalGate
             gate = ApprovalGate(mem)
             gate.save_translation_draft(session)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[IMAGE PIPELINE] Error saving draft: {e}")
 
 
 @router.post("/{doc_id}/translate-image")

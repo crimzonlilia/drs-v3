@@ -250,6 +250,7 @@ async def approve_translation(
         )
         
         # Update pipeline status to approved
+        session.pipeline_status["review"] = "success"
         session.pipeline_status["approve"] = "success"
         if session.pipeline_status.get("render") == "idle":
              pass # keep idle if no rendering
