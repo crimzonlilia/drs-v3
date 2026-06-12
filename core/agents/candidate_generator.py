@@ -302,6 +302,34 @@ Do not include any explanations, notes, or markdown wrappers.
             print(f"Batch refinement in CandidateGenerator failed: {e}")
             return {}
 
+    async def chat(
+        self,
+        system_prompt: str,
+        message: str,
+        history: list[dict] | None = None
+    ) -> str:
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            for h in history:
+                messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+        messages.append({"role": "user", "content": message})
+
+        payload = {
+            "model": self.model,
+            "max_tokens": 1024,
+            "temperature": 0.5,
+            "messages": messages,
+        }
+
+        try:
+            response = await self._client.post("chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            print(f"OpenRouter API call failed in CandidateGenerator.chat: {e}")
+            return f"Error: Could not communicate with translation assistant ({e})"
+
     async def close(self):
         await self._client.aclose()
 

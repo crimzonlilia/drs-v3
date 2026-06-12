@@ -32,7 +32,11 @@ import {
   getFontDownloadUrl,
   getDocumentSegments,
   updateSegmentText,
-  uploadAssets
+  uploadAssets,
+  sendGeneralChat,
+  upsertChatMessage,
+  getChatHistory,
+  deleteChatMessage
 } from '@/app/api-client'
 
 import PipelineTracker from './PipelineTracker'
@@ -96,6 +100,7 @@ interface ChatMessage {
   isImageWorkflow?: boolean
   assetId?: string
   segments?: any[]
+  isGeneralChat?: boolean
 }
 
 interface CenterPanelProps {
@@ -151,6 +156,7 @@ export default function CenterPanel({
   const [refineFeedbackText, setRefineFeedbackText] = useState('')
   const [showSourcePanel, setShowSourcePanel] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const persistedMessagesRef = useRef<Map<string, string>>(new Map())
 
   // File upload state for unified input area
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -170,6 +176,7 @@ export default function CenterPanel({
   })
   const [isImageDoc, setIsImageDoc] = useState(false)
   const [inspectedMsgId, setInspectedMsgId] = useState<string | null>(null)
+  const [approvingMsgId, setApprovingMsgId] = useState<string | null>(null)
 
   // Font manager states
   const [availableFonts, setAvailableFonts] = useState<string[]>([])
@@ -217,7 +224,7 @@ export default function CenterPanel({
     loadFonts()
   }, [projectId])
 
-  // Load chapter data
+  // Load chapter data & chat history
   useEffect(() => {
     let active = true
     async function load() {
@@ -241,18 +248,33 @@ export default function CenterPanel({
                       activeFile.toLowerCase().endsWith('.webp')
         setIsImageDoc(isImg)
 
-        // Populate timeline with initial greeting
-        setChatMessages([
-          {
-            id: 'welcome',
-            sender: 'ai',
-            text: `Chào mừng bạn đến với **Localization Workspace** cho tài liệu **${activeFile}**. Bạn có thể gửi yêu cầu dịch văn bản hoặc đính kèm ảnh manga/comic để dịch trực tiếp trong luồng chat này.`,
-            status: 'done',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-        ])
+        // Clear refs map on doc reload
+        persistedMessagesRef.current.clear()
+
+        // Fetch persisted chat history
+        const history = await getChatHistory(projectId, activeFile)
+        if (!active) return
+
+        if (history && history.length > 0) {
+          history.forEach(m => {
+            const cacheKey = `${m.id}_${m.status}_${m.text?.length || 0}_${m.sessionId || ''}`
+            persistedMessagesRef.current.set(m.id, cacheKey)
+          })
+          setChatMessages(history)
+        } else {
+          // Populate timeline with initial greeting
+          setChatMessages([
+            {
+              id: 'welcome',
+              sender: 'ai',
+              text: `Chào mừng bạn đến với **Localization Workspace** cho tài liệu **${activeFile}**. Bạn có thể gửi yêu cầu dịch văn bản hoặc đính kèm ảnh manga/comic để dịch trực tiếp trong luồng chat này.`,
+              status: 'done',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }
+          ])
+        }
       } catch (err) {
-        console.error('Failed to load chapter content:', err)
+        console.error('Failed to load chapter content or chat history:', err)
       }
     }
     load()
@@ -260,6 +282,31 @@ export default function CenterPanel({
       active = false
     }
   }, [projectId, activeFile])
+
+  // Auto-persist chat history messages when they change
+  useEffect(() => {
+    if (!projectId || !activeFile || chatMessages.length === 0) return
+    
+    // Skip welcome message
+    const msgsToPersist = chatMessages.filter(m => m.id !== 'welcome')
+    
+    msgsToPersist.forEach(async (msg) => {
+      const cacheKey = `${msg.id}_${msg.status}_${msg.text?.length || 0}_${msg.sessionId || ''}`
+      if (persistedMessagesRef.current.get(msg.id) === cacheKey) {
+        return
+      }
+      // Update ref cache immediately to prevent duplicate triggers
+      persistedMessagesRef.current.set(msg.id, cacheKey)
+      
+      try {
+        await upsertChatMessage(projectId, activeFile, msg)
+      } catch (err) {
+        console.error(`Failed to persist message ${msg.id}:`, err)
+        // Evict key from ref map on failure so it can retry later
+        persistedMessagesRef.current.delete(msg.id)
+      }
+    })
+  }, [chatMessages, projectId, activeFile])
 
   // Auto-save full doc text occasionally
   useEffect(() => {
@@ -344,6 +391,35 @@ export default function CenterPanel({
       clearTimeout(timer)
     }
   }, [activeSessionId, currentAssetId, projectId, activeFile])
+
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!msgId || msgId === 'welcome') return
+    try {
+      await deleteChatMessage(projectId, msgId)
+      setChatMessages(prev => prev.filter(m => m.id !== msgId))
+      
+      // If we are deleting a paired prompt/response, delete the user request as well
+      if (msgId.startsWith('ai_')) {
+        const correspondingUserId = msgId.replace('ai_', 'user_')
+        try {
+          await deleteChatMessage(projectId, correspondingUserId)
+        } catch (e) {}
+        setChatMessages(prev => prev.filter(m => m.id !== msgId && m.id !== correspondingUserId))
+      } else if (msgId.startsWith('user_')) {
+        const correspondingAiId = msgId.replace('user_', 'ai_')
+        try {
+          await deleteChatMessage(projectId, correspondingAiId)
+        } catch (e) {}
+        setChatMessages(prev => prev.filter(m => m.id !== msgId && m.id !== correspondingAiId))
+      }
+      
+      if (activeSessionId === msgId) {
+        setActiveSessionId(null)
+      }
+    } catch (e) {
+      console.error('Failed to delete chat message:', e)
+    }
+  }
 
   // Start text translation pipeline
   const startTranslationPipeline = async (rawPrompt: string, sourceText: string, sentenceIdx: number, instruction?: string) => {
@@ -457,6 +533,60 @@ export default function CenterPanel({
     }
   }
 
+  // Start general chat assistant pipeline
+  const startGeneralChatPipeline = async (promptText: string) => {
+    const messageId = `msg_${Date.now()}`
+    
+    const userMsg: ChatMessage = {
+      id: `user_${messageId}`,
+      sender: 'user',
+      text: promptText,
+      status: 'done',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isGeneralChat: true
+    }
+    
+    const aiMsg: ChatMessage = {
+      id: `ai_${messageId}`,
+      sender: 'ai',
+      text: '',
+      status: 'processing',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isGeneralChat: true
+    }
+    
+    setChatMessages(prev => [...prev, userMsg, aiMsg])
+    setIsTranslating(true)
+    
+    try {
+      // Build history payload from previous general chat messages
+      const history = chatMessages
+        .filter(m => m.isGeneralChat && m.status === 'done')
+        .slice(-10) // last 10 messages
+        .map(m => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.text
+        }))
+        
+      const res = await sendGeneralChat(projectId, activeFile, promptText, aiMsg.id, history)
+      
+      setChatMessages(prev => prev.map(m => m.id === aiMsg.id ? {
+        ...m,
+        status: 'done',
+        text: res.reply
+      } : m))
+    } catch (err: any) {
+      console.error(err)
+      setChatMessages(prev => prev.map(m => m.id === aiMsg.id ? {
+        ...m,
+        status: 'failed',
+        text: `Không thể kết nối với trợ lý: ${err.message || 'Lỗi kết nối'}`
+      } : m))
+    } finally {
+      setIsTranslating(false)
+    }
+  }
+
   // Handle selected image file and prompt
   const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -549,13 +679,24 @@ export default function CenterPanel({
       }
       setChatInput('')
     } else {
-      // Standard text translation
+      // Standard text translation or general chat
       const { originalText, instruction } = parseUserMessage(chatInput)
-      if (originalText) {
-        startTranslationPipeline(chatInput, originalText, chatMessages.length / 2, instruction)
+      
+      const isJp = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u4e00-\u9fff]+/g.test(chatInput)
+      const isTranslateKeyword = /\b(dịch|translate|translation|dich)\b/i.test(chatInput)
+      
+      const isTranslation = isJp || isTranslateKeyword
+      
+      if (isTranslation) {
+        if (originalText) {
+          startTranslationPipeline(chatInput, originalText, chatMessages.length / 2, instruction)
+        } else {
+          // Treat user input text as the source text directly
+          startTranslationPipeline(chatInput, chatInput, chatMessages.length / 2)
+        }
       } else {
-        // Treat user input text as the source text directly
-        startTranslationPipeline(chatInput, chatInput, chatMessages.length / 2)
+        // Run general chatbot conversation assistant
+        startGeneralChatPipeline(chatInput)
       }
       setChatInput('')
     }
@@ -582,6 +723,7 @@ export default function CenterPanel({
 
   // Approve a segment group / image page translation and render it
   const handleApproveAndRender = async (msgId: string, sessionId: string, assetId: string) => {
+    setApprovingMsgId(msgId)
     try {
       // 1. Approve session (adds translations to memory)
       await approveTranslation(projectId, sessionId)
@@ -600,23 +742,25 @@ export default function CenterPanel({
       
       // Update preview to rendered image
       setMangaViewModes(prev => ({ ...prev, [assetId]: 'rendered' }))
-      
-      alert("Đã vẽ dịch và chốt dịch manga thành công!")
     } catch (err: any) {
       alert(`Lỗi phê duyệt và vẽ dịch: ${err.message}`)
       setPipelineStatus(prev => ({ ...prev, render: 'failed' }))
+    } finally {
+      setApprovingMsgId(null)
     }
   }
 
   const handleApproveChatMessage = async (msgId: string, sessionId: string) => {
+    setApprovingMsgId(msgId)
     try {
       await approveTranslation(projectId, sessionId)
       setChatMessages(prev => prev.map(m => m.id === msgId ? { ...m, isApproved: true } : m))
       setIsApproved(true)
       setPipelineStatus(prev => ({ ...prev, approve: 'success' }))
-      alert("Đã chốt bản dịch thành công!")
     } catch (err: any) {
       alert(`Lỗi khi duyệt bản dịch: ${err.message}`)
+    } finally {
+      setApprovingMsgId(null)
     }
   }
 
@@ -858,16 +1002,31 @@ export default function CenterPanel({
                           <span className="font-semibold text-slate-850 dark:text-slate-200 select-none">
                             {isUser ? 'Bạn' : 'Hệ thống'}
                           </span>
-                          <span className="text-[10px] text-slate-400 select-none">
-                            {msg.timestamp}
-                          </span>
+                          <div className="flex items-center gap-2 select-none">
+                            <span className="text-[10px] text-slate-400">
+                              {msg.timestamp}
+                            </span>
+                            {msg.id !== 'welcome' && (
+                              <button
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                className="text-slate-300 hover:text-red-500 transition-colors p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-900"
+                                title="Hủy/Xóa tin nhắn này"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* Processing indicators */}
-                        {msg.status === 'processing' && !msg.isImageWorkflow && (
+                        {msg.status === 'processing' && (
                           <div className="flex items-center gap-2 text-slate-400">
                             <Loader2 size={12} className="animate-spin text-indigo-500" />
-                            <span>Đang dịch thô và đối chiếu rules...</span>
+                            <span>
+                              {msg.isImageWorkflow 
+                                ? (msg.text || `Đang xử lý hình ảnh...`)
+                                : (msg.isGeneralChat ? 'Đang soạn câu trả lời...' : 'Đang dịch thô và đối chiếu rules...')}
+                            </span>
                           </div>
                         )}
 
@@ -879,11 +1038,11 @@ export default function CenterPanel({
                         )}
 
                         {/* Text translation result */}
-                        {msg.status === 'done' && !msg.isImageWorkflow && (
+                        {msg.status === 'done' && (!msg.isImageWorkflow || isUser) && (
                           <div className="space-y-2">
                             <div 
                               onClick={() => setInspectedMsgId(inspectedMsgId === msg.id ? null : msg.id)}
-                              className="text-slate-805 dark:text-slate-200 text-[13.5px] leading-relaxed cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/50 p-1.5 rounded-lg transition-colors font-serif whitespace-pre-wrap select-text"
+                              className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/50 p-1.5 rounded-lg transition-colors font-serif whitespace-pre-wrap select-text"
                               title="Click để hiển thị câu gốc"
                             >
                               {renderFormattedText(msg.text)}
@@ -898,7 +1057,7 @@ export default function CenterPanel({
                         )}
 
                         {/* Image workflow with side-by-side MangaBubbleEditor */}
-                        {msg.isImageWorkflow && (
+                        {msg.isImageWorkflow && !isUser && msg.status === 'done' && (
                           <MangaBubbleEditor
                             projectId={projectId}
                             activeFile={activeFile}
@@ -909,6 +1068,7 @@ export default function CenterPanel({
                             handleApproveAndRender={handleApproveAndRender}
                             selectedFont={selectedFont}
                             fontSize={fontSize}
+                            isApproving={approvingMsgId === msg.id}
                           />
                         )}
 
@@ -940,11 +1100,20 @@ export default function CenterPanel({
                             ) : (
                               <>
                                 <button
+                                  disabled={approvingMsgId === msg.id}
                                   onClick={() => handleApproveChatMessage(msg.id, msg.sessionId || '')}
-                                  className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 dark:border-slate-800 dark:hover:border-emerald-700 transition-colors bg-white dark:bg-slate-900 flex items-center gap-1"
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium border border-slate-200 transition-colors bg-white dark:bg-slate-900 flex items-center gap-1 ${
+                                    approvingMsgId === msg.id
+                                      ? 'text-slate-400 border-slate-100 dark:border-slate-800 cursor-not-allowed'
+                                      : 'hover:border-emerald-500 hover:text-emerald-600 dark:border-slate-800 dark:hover:border-emerald-700'
+                                  }`}
                                 >
-                                  <CheckCircle2 size={12} />
-                                  <span>OK (Chốt)</span>
+                                  {approvingMsgId === msg.id ? (
+                                    <Loader2 size={12} className="animate-spin text-slate-400" />
+                                  ) : (
+                                    <CheckCircle2 size={12} />
+                                  )}
+                                  <span>{approvingMsgId === msg.id ? 'Đang duyệt...' : 'OK (Chốt)'}</span>
                                 </button>
                                 <button
                                   onClick={() => {

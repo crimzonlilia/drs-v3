@@ -528,3 +528,43 @@ export async function updateSegmentText(projectId: string, docId: string, segmen
   });
 }
 
+export async function sendGeneralChat(
+  projectId: string,
+  docId: string,
+  message: string,
+  messageId?: string,
+  history?: { role: string; content: string }[]
+): Promise<{ reply: string }> {
+  return await apiFetch(`/api/translation/chat`, {
+    method: 'POST',
+    body: JSON.stringify({
+      project_id: projectId,
+      doc_id: docId,
+      message,
+      message_id: messageId,
+      history
+    })
+  });
+}
+
+export async function upsertChatMessage(projectId: string, docId: string, msg: any): Promise<any> {
+  return await apiFetch(`/api/translation/history/upsert`, {
+    method: 'POST',
+    body: JSON.stringify({
+      project_id: projectId,
+      doc_id: docId,
+      ...msg
+    })
+  });
+}
+
+export async function getChatHistory(projectId: string, docId: string): Promise<any[]> {
+  return await apiFetch(`/api/translation/history?project_id=${projectId}&doc_id=${docId}`);
+}
+
+export async function deleteChatMessage(projectId: string, messageId: string): Promise<any> {
+  return await apiFetch(`/api/translation/history/${messageId}?project_id=${projectId}`, {
+    method: 'DELETE'
+  });
+}
+

@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 
 # Load .env
-load_dotenv()
+load_dotenv(override=True)
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -177,6 +177,10 @@ class Config:
             "temperature",
             0.2
         )
+
+    @property
+    def mock_ocr(self) -> bool:
+        return os.getenv("MOCK_OCR", "false").lower() == "true"
 
 
 cfg = Config(_load())

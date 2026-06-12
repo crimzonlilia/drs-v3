@@ -4,12 +4,13 @@ import os
 import httpx
 import json
 from PIL import Image
-from core.ocr.base import OCRProvider, OCRBlock
+from config import cfg
+from core.ocr.base import OCRProvider, OCRBlock, extract_via_llm
 
 class MangaOCRProvider(OCRProvider):
     async def extract(self, image_path: str) -> list[OCRBlock]:
         api_url = os.getenv("MANGA_OCR_API_URL")
-        mock_ocr = os.getenv("MOCK_OCR", "false").lower() == "true"
+        mock_ocr = cfg.mock_ocr
         
         # 1. API Mode
         if api_url:
@@ -95,10 +96,8 @@ class MangaOCRProvider(OCRProvider):
                 return blocks
                 
             except ImportError:
-                # Local packages are not installed, fallback to Mock or error
-                if not api_url and os.getenv("MOCK_OCR") is None:
-                    # If user did not configure MOCK_OCR explicitly, warn them
-                    print("Warning: paddleocr or manga_ocr not installed. Falling back to Mock OCR.")
+                # Local packages are not installed, fallback to real LLM OCR
+                return await extract_via_llm(image_path, "ja")
         
         # 3. Mock Mode (Fallback)
         # Mock Japanese Manga bubbles

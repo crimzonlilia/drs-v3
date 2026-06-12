@@ -4,6 +4,7 @@ Translation and Approval workflow router using Cloudflare R2 and D1.
 
 import uuid
 import json
+from datetime import datetime
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, HTTPException, Depends
 from dataclasses import asdict
@@ -11,7 +12,7 @@ from dataclasses import asdict
 from core.memory import ProjectMemory
 from core.workflow.approval_gate import ApprovalGate, Decision
 from core.agents import TranslationAgent, ConsistencyAuditor
-from server.schemas import TranslateRequest, TranslateResponse
+from server.schemas import TranslateRequest, TranslateResponse, ChatRequest, ChatResponse, ChatHistoryUpsert
 from server.auth import get_current_user
 from server.routers.projects import verify_project_member
 from core.utils.db import execute_query
@@ -448,3 +449,160 @@ async def update_session_proposals(session_id: str, data: dict, current_user: di
     gate.save_translation_draft(session)
     
     return {"status": "success", "message": "Proposals updated and saved to R2"}
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_assistant(
+    request: ChatRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    General chatbot assistant endpoint for out-of-scope discussion.
+    Uses the project memory and description to provide smart, context-aware answers.
+    """
+    await verify_project_member(request.project_id, current_user["id"], "viewer")
+    
+    mem = ProjectMemory(request.project_id)
+    
+    # 1. Fetch project details
+    project_rows = await execute_query("SELECT description, source_lang, target_lang FROM projects WHERE id = ?", [request.project_id])
+    if not project_rows:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project_description = project_rows[0].get("description", "")
+    source_lang = project_rows[0].get("source_lang", "ja")
+    target_lang = project_rows[0].get("target_lang", "vi")
+    
+    # 2. Build memory context (Glossary, Entities, Styles)
+    memory_context = mem.build_prompt_context(source_lang, target_lang)
+    
+    system_prompt = f"""You are a helpful, professional localization assistant for the project '{request.project_id}'.
+Project Context/Description:
+{project_description or "(No project description provided)"}
+
+Here is the approved project memory (Glossary, Character Entities, and Styles) that you can reference to answer user queries:
+{memory_context or "(No approved memory yet for this project)"}
+
+The user may talk to you, ask general questions about the project, characters, grammar, or ask for translation advice.
+Answer naturally, concisely, and helpfully. Keep your tone professional.
+"""
+    
+    from core.agents.candidate_generator import CandidateGenerator
+    
+    try:
+        async with CandidateGenerator(mem) as generator:
+            reply = await generator.chat(
+                system_prompt=system_prompt,
+                message=request.message,
+                history=request.history
+            )
+            return ChatResponse(reply=reply)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat generation failed: {e}")
+
+
+@router.post("/history/upsert")
+async def upsert_history_message(
+    request: ChatHistoryUpsert,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Save or update a chat timeline message in the project document history database.
+    """
+    await verify_project_member(request.project_id, current_user["id"], "editor")
+    
+    # Check if message already exists
+    exists = await execute_query("SELECT id FROM chat_history WHERE id = ?", [request.id])
+    
+    editorial_score_json = json.dumps(request.editorialScore) if request.editorialScore is not None else None
+    validation_issues_json = json.dumps(request.validationIssues) if request.validationIssues is not None else None
+    editorial_feedback_json = json.dumps(request.editorialFeedback) if request.editorialFeedback is not None else None
+    proposals_json = json.dumps(request.proposals) if request.proposals is not None else None
+    segments_json = json.dumps(request.segments) if request.segments is not None else None
+    
+    if exists:
+        sql = """
+        UPDATE chat_history SET
+            text = ?, original_text = ?, instruction = ?, status = ?, session_id = ?, qa_score = ?,
+            editorial_score_json = ?, validation_issues_json = ?, editorial_feedback_json = ?,
+            proposals_json = ?, segments_json = ?
+        WHERE id = ?
+        """
+        params = [
+            request.text, request.originalText, request.instruction, request.status, request.sessionId, request.qaScore,
+            editorial_score_json, validation_issues_json, editorial_feedback_json,
+            proposals_json, segments_json, request.id
+        ]
+        await execute_query(sql, params)
+    else:
+        sql = """
+        INSERT INTO chat_history (
+            id, project_id, doc_id, sender, text, original_text, instruction, status, session_id,
+            is_image_workflow, is_general_chat, asset_id, qa_score, editorial_score_json,
+            validation_issues_json, editorial_feedback_json, proposals_json, segments_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        params = [
+            request.id, request.project_id, request.doc_id, request.sender, request.text,
+            request.originalText, request.instruction, request.status, request.sessionId,
+            1 if request.isImageWorkflow else 0, 1 if request.isGeneralChat else 0,
+            request.assetId, request.qaScore,
+            editorial_score_json, validation_issues_json, editorial_feedback_json,
+            proposals_json, segments_json, datetime.now().isoformat()
+        ]
+        await execute_query(sql, params)
+        return {"status": "success"}
+
+
+@router.delete("/history/{message_id}")
+async def delete_history_message(
+    message_id: str,
+    project_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a message from the persistent chat history.
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    await execute_query("DELETE FROM chat_history WHERE id = ?", [message_id])
+    return {"status": "success"}
+
+
+@router.get("/history", response_model=List[Dict[str, Any]])
+async def get_chat_history(
+    project_id: str,
+    doc_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Fetch persistent chat/translation history for a project document.
+    """
+    await verify_project_member(project_id, current_user["id"], "viewer")
+    
+    rows = await execute_query(
+        "SELECT * FROM chat_history WHERE project_id = ? AND doc_id = ? ORDER BY created_at ASC",
+        [project_id, doc_id]
+    )
+    
+    chat_list = []
+    for r in rows:
+        chat_list.append({
+            "id": r["id"],
+            "sender": r["sender"],
+            "text": r["text"],
+            "originalText": r.get("original_text") or "",
+            "instruction": r.get("instruction") or "",
+            "status": r["status"],
+            "sessionId": r.get("session_id") or "",
+            "isImageWorkflow": bool(r["is_image_workflow"]),
+            "isGeneralChat": bool(r["is_general_chat"]),
+            "assetId": r.get("asset_id") or "",
+            "qaScore": r.get("qa_score"),
+            "editorialScore": json.loads(r["editorial_score_json"]) if r.get("editorial_score_json") else {},
+            "validationIssues": json.loads(r["validation_issues_json"]) if r.get("validation_issues_json") else [],
+            "editorialFeedback": json.loads(r["editorial_feedback_json"]) if r.get("editorial_feedback_json") else [],
+            "proposals": json.loads(r["proposals_json"]) if r.get("proposals_json") else [],
+            "segments": json.loads(r["segments_json"]) if r.get("segments_json") else [],
+            "timestamp": r["created_at"][11:16] if r.get("created_at") else ""
+        })
+    return chat_list
+

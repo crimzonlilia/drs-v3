@@ -124,4 +124,38 @@ class StyleRuleAddInput(BaseModel):
     target_lang: Optional[str] = ""
 
 
+class ChatRequest(BaseModel):
+    project_id: str
+    doc_id: str
+    message: str
+    message_id: Optional[str] = None
+    history: Optional[List[Dict[str, str]]] = None
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
+class ChatHistoryUpsert(BaseModel):
+    project_id: str
+    doc_id: str
+    id: str
+    sender: str
+    text: str
+    originalText: Optional[str] = ""
+    instruction: Optional[str] = ""
+    status: str
+    sessionId: Optional[str] = ""
+    isImageWorkflow: Optional[bool] = False
+    isGeneralChat: Optional[bool] = False
+    assetId: Optional[str] = ""
+    qaScore: Optional[int] = None
+    editorialScore: Optional[Dict[str, Any]] = None
+    validationIssues: Optional[List[Dict[str, Any]]] = None
+    editorialFeedback: Optional[List[str]] = None
+    proposals: Optional[List[Dict[str, Any]]] = None
+    segments: Optional[List[Dict[str, Any]]] = None
+
+
+
 

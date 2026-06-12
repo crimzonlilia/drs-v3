@@ -193,6 +193,28 @@ async def init_db() -> None:
         mime_type    TEXT,
         updated_at   TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS chat_history (
+        id               TEXT PRIMARY KEY,
+        project_id       TEXT NOT NULL,
+        doc_id           TEXT NOT NULL,
+        sender           TEXT NOT NULL,
+        text             TEXT NOT NULL,
+        original_text    TEXT,
+        instruction      TEXT,
+        status           TEXT NOT NULL,
+        session_id       TEXT,
+        is_image_workflow INTEGER NOT NULL DEFAULT 0,
+        is_general_chat  INTEGER NOT NULL DEFAULT 0,
+        asset_id         TEXT,
+        qa_score         INTEGER,
+        editorial_score_json TEXT,
+        validation_issues_json TEXT,
+        editorial_feedback_json TEXT,
+        proposals_json   TEXT,
+        segments_json    TEXT,
+        created_at       TEXT NOT NULL
+    );
     """
     
     # Split schema by semicolon to run individually on SQLite/D1
@@ -214,5 +236,6 @@ async def init_db() -> None:
     idx_statements = [
         ("CREATE INDEX IF NOT EXISTS idx_segments_doc ON segments(project_id, doc_id);", []),
         ("CREATE INDEX IF NOT EXISTS idx_assets_doc ON assets(project_id, doc_id);", []),
+        ("CREATE INDEX IF NOT EXISTS idx_chat_history ON chat_history(project_id, doc_id);", []),
     ]
     await execute_batch(idx_statements)

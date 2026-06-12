@@ -349,6 +349,12 @@ async def delete_project_doc(
         [project_id, actual_doc_id]
     )
     
+    # Delete chat history
+    await execute_query(
+        "DELETE FROM chat_history WHERE project_id = ? AND doc_id = ?",
+        [project_id, actual_doc_id]
+    )
+    
     return {"status": "success", "message": f"Document {actual_doc_id} deleted successfully"}
 
 

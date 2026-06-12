@@ -69,7 +69,7 @@ class EntityChecker:
     # ------------------------------------------------------------------ #
 
     def _check_name(self, entity: Entity, draft_text: str) -> list[EntityFlag]:
-        if entity.canonical_name in draft_text:
+        if entity.canonical_name.lower() in draft_text.lower():
             return []
         # canonical name missing — wrong name or untranslated
         snippet = self._extract_snippet(draft_text, entity.source_name)
@@ -86,7 +86,7 @@ class EntityChecker:
     def _check_aliases(self, entity: Entity, draft_text: str) -> list[EntityFlag]:
         flags = []
         for alias in entity.aliases:
-            if alias in draft_text and entity.canonical_name not in draft_text:
+            if alias.lower() in draft_text.lower() and entity.canonical_name.lower() not in draft_text.lower():
                 snippet = self._extract_snippet(draft_text, alias)
                 flags.append(EntityFlag(
                     entity_id=entity.entity_id,
@@ -107,17 +107,17 @@ class EntityChecker:
 
         This is a lightweight heuristic — enough for human review prompting.
         """
-        if entity.canonical_name not in draft_text:
+        if entity.canonical_name.lower() not in draft_text.lower():
             return []  # entity not mentioned, nothing to check
 
         approved = [p.strip() for p in re.split(r"[/,]", entity.pronouns) if p.strip()]
         # find positions of canonical name and check window around each
         flags = []
-        for match in re.finditer(re.escape(entity.canonical_name), draft_text):
+        for match in re.finditer(re.escape(entity.canonical_name), draft_text, re.IGNORECASE):
             start = max(0, match.start() - 60)
             end = min(len(draft_text), match.end() + 60)
             window = draft_text[start:end]
-            if not any(p in window for p in approved):
+            if not any(p.lower() in window.lower() for p in approved):
                 # no approved pronoun nearby — possible drift, surface for human
                 flags.append(EntityFlag(
                     entity_id=entity.entity_id,

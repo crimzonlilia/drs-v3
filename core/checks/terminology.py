@@ -56,7 +56,7 @@ class TerminologyChecker:
             if entry.source_term not in source_text:
                 continue  # term not present in this chunk, skip
 
-            if entry.target_term in draft_text:
+            if entry.target_term.lower() in draft_text.lower():
                 continue  # correct — approved term used
 
             # violation: approved term missing from draft

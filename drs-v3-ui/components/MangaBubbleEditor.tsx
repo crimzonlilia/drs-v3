@@ -14,6 +14,7 @@ interface MangaBubbleEditorProps {
   handleApproveAndRender: (msgId: string, sessionId: string, assetId: string) => void
   selectedFont: string
   fontSize: number
+  isApproving?: boolean
 }
 
 export default function MangaBubbleEditor({
@@ -25,7 +26,8 @@ export default function MangaBubbleEditor({
   handleSegmentChange,
   handleApproveAndRender,
   selectedFont,
-  fontSize
+  fontSize,
+  isApproving = false
 }: MangaBubbleEditorProps) {
   return (
     <div className="w-full space-y-4">
@@ -100,16 +102,30 @@ export default function MangaBubbleEditor({
             
             <div className="pt-2 border-t border-slate-100 dark:border-slate-900 flex justify-end">
               <button
-                disabled={msg.isApproved}
+                disabled={msg.isApproved || isApproving}
                 onClick={() => handleApproveAndRender(msg.id, msg.sessionId || '', msg.assetId || '')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                   msg.isApproved
                     ? 'bg-emerald-500/10 text-emerald-600'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    : isApproving
+                      ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
                 }`}
               >
-                {msg.isApproved ? <Check size={13} /> : <CheckCircle2 size={13} />}
-                <span>{msg.isApproved ? 'Đã Chốt & Vẽ' : 'Duyệt & Vẽ Ảnh'}</span>
+                {isApproving ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : msg.isApproved ? (
+                  <Check size={13} />
+                ) : (
+                  <CheckCircle2 size={13} />
+                )}
+                <span>
+                  {isApproving
+                    ? 'Đang duyệt & vẽ...'
+                    : msg.isApproved
+                      ? 'Đã Chốt & Vẽ'
+                      : 'Duyệt & Vẽ Ảnh'}
+                </span>
               </button>
             </div>
           </div>
