@@ -525,13 +525,13 @@ async def upsert_history_message(
         UPDATE chat_history SET
             text = ?, original_text = ?, instruction = ?, status = ?, session_id = ?, qa_score = ?,
             editorial_score_json = ?, validation_issues_json = ?, editorial_feedback_json = ?,
-            proposals_json = ?, segments_json = ?
+            proposals_json = ?, segments_json = ?, is_approved = ?
         WHERE id = ?
         """
         params = [
             request.text, request.originalText, request.instruction, request.status, request.sessionId, request.qaScore,
             editorial_score_json, validation_issues_json, editorial_feedback_json,
-            proposals_json, segments_json, request.id
+            proposals_json, segments_json, 1 if request.isApproved else 0, request.id
         ]
         await execute_query(sql, params)
     else:
@@ -539,8 +539,8 @@ async def upsert_history_message(
         INSERT INTO chat_history (
             id, project_id, doc_id, sender, text, original_text, instruction, status, session_id,
             is_image_workflow, is_general_chat, asset_id, qa_score, editorial_score_json,
-            validation_issues_json, editorial_feedback_json, proposals_json, segments_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            validation_issues_json, editorial_feedback_json, proposals_json, segments_json, is_approved, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = [
             request.id, request.project_id, request.doc_id, request.sender, request.text,
@@ -548,7 +548,7 @@ async def upsert_history_message(
             1 if request.isImageWorkflow else 0, 1 if request.isGeneralChat else 0,
             request.assetId, request.qaScore,
             editorial_score_json, validation_issues_json, editorial_feedback_json,
-            proposals_json, segments_json, datetime.now().isoformat()
+            proposals_json, segments_json, 1 if request.isApproved else 0, datetime.now().isoformat()
         ]
         await execute_query(sql, params)
         return {"status": "success"}
@@ -603,6 +603,7 @@ async def get_chat_history(
             "editorialFeedback": json.loads(r["editorial_feedback_json"]) if r.get("editorial_feedback_json") else [],
             "proposals": json.loads(r["proposals_json"]) if r.get("proposals_json") else [],
             "segments": json.loads(r["segments_json"]) if r.get("segments_json") else [],
+            "isApproved": bool(r.get("is_approved", 0)),
             "timestamp": r["created_at"][11:16] if r.get("created_at") else ""
         })
     return chat_list

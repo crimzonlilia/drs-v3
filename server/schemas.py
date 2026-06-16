@@ -146,6 +146,7 @@ class ChatHistoryUpsert(BaseModel):
     instruction: Optional[str] = ""
     status: str
     sessionId: Optional[str] = ""
+    isApproved: Optional[bool] = False
     isImageWorkflow: Optional[bool] = False
     isGeneralChat: Optional[bool] = False
     assetId: Optional[str] = ""

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { FileText, PanelLeft, Plus, Trash2 } from 'lucide-react'
-import { listChapters, deleteChapter } from '@/app/api-client'
+import { listChapters, deleteChapter, saveChapter } from '@/app/api-client'
 
 interface LeftSidebarProps {
   projectId: string
@@ -62,7 +62,7 @@ export default function LeftSidebar({
     }
   }
 
-  const handleAddFile = () => {
+  const handleAddFile = async () => {
     const filename = prompt('New document name')
     if (!filename?.trim()) return
     const cleanName = filename.endsWith('.md') ? filename : `${filename}.md`
@@ -70,8 +70,13 @@ export default function LeftSidebar({
       alert('A document with that name already exists.')
       return
     }
-    setFileList([...fileList, cleanName])
-    onFileSelect(cleanName)
+    try {
+      await saveChapter(projectId, cleanName, { draft: '' })
+      setFileList([...fileList, cleanName])
+      onFileSelect(cleanName)
+    } catch (err: any) {
+      alert(`Lỗi khi tạo tài liệu mới: ${err.message}`)
+    }
   }
 
   return (

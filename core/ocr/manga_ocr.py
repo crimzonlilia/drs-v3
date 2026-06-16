@@ -37,13 +37,15 @@ class MangaOCRProvider(OCRProvider):
         # 2. Local Mode
         if not mock_ocr:
             try:
-                # Lazy import to avoid importing heavy libraries unless running locally
-                from paddleocr import PaddleOCR
+                from paddleocr import PaddleOCR, logger
                 from manga_ocr import MangaOcr
+                import logging
+                
+                # Suppress verbose paddle logs
+                logger.setLevel(logging.ERROR)
                 
                 # Initialize engines (uses cpu by default or gpu if available)
-                # det=True, rec=False means detection-only for PaddleOCR
-                det_model = PaddleOCR(use_angle_cls=True, lang="japan", rec=False, show_log=False)
+                det_model = PaddleOCR(use_angle_cls=True, lang="japan")
                 mocr = MangaOcr()
                 
                 # Open image to get size for normalization

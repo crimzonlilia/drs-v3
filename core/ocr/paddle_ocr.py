@@ -37,11 +37,14 @@ class PaddleOCRProvider(OCRProvider):
         # 2. Local Mode
         if not mock_ocr:
             try:
-                # Lazy import to avoid importing heavy libraries
-                from paddleocr import PaddleOCR
+                from paddleocr import PaddleOCR, logger
+                import logging
+                
+                # Suppress verbose paddle logs
+                logger.setLevel(logging.ERROR)
                 
                 # Initialize PaddleOCR with English default or config
-                ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+                ocr = PaddleOCR(use_angle_cls=True, lang="en")
                 
                 # Open image for normalization
                 img = Image.open(image_path)

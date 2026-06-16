@@ -194,7 +194,7 @@ export async function deleteChapter(projectId: string, docId: string): Promise<a
   });
 }
 
-export async function saveChapter(projectId: string, docId: string, data: { draft?: string; approved?: string }): Promise<any> {
+export async function saveChapter(projectId: string, docId: string, data: { draft?: string; approved?: string; source_text?: string }): Promise<any> {
   return await apiFetch(`/api/projects/${projectId}/chapters/${docId}`, {
     method: 'POST',
     body: JSON.stringify(data)

@@ -13,7 +13,7 @@ sys.path.insert(0, str(project_root))
 from server.main import app
 from server.auth import create_access_token
 from core.utils.db import execute_query
-from core.utils.r2 import write_text, read_text
+from core.utils.r2 import write_text, read_text, delete_file
 
 def test_flow():
     # Set sys.stdout to handle UTF-8 print
@@ -31,19 +31,16 @@ def test_flow():
     
     # Seed DB with a project member record
     # Note: Since database might already be seeded, we insert/replace
-    import sqlite3
-    db_path = project_root / "memory_store" / "d1_mock.db"
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (id, username, hashed_password, created_at) VALUES (1, 'admin', 'mock_hash', '2026-06-06')")
-    cursor.execute("INSERT OR IGNORE INTO projects (id, display_name, source_lang, target_lang, content_type, created_at) VALUES ('demo_project', 'Demo', 'ja', 'vi', 'general', '2026-06-06')")
-    cursor.execute("INSERT OR REPLACE INTO project_members (user_id, project_id, role, joined_at) VALUES (1, 'demo_project', 'owner', '2026-06-06')")
-    conn.commit()
-    conn.close()
+    import asyncio
+    asyncio.run(execute_query("INSERT OR IGNORE INTO users (id, username, hashed_password, created_at) VALUES (1, 'admin', 'mock_hash', '2026-06-06')"))
+    asyncio.run(execute_query("INSERT OR IGNORE INTO projects (id, display_name, source_lang, target_lang, content_type, created_at) VALUES ('demo_project', 'Demo', 'ja', 'vi', 'general', '2026-06-06')"))
+    asyncio.run(execute_query("INSERT OR REPLACE INTO project_members (user_id, project_id, role, joined_at) VALUES (1, 'demo_project', 'owner', '2026-06-06')"))
+    asyncio.run(execute_query("DELETE FROM segments WHERE project_id = ? AND doc_id = ?", ["demo_project", "doc_test_export"]))
 
     # Seed mock document in R2
     doc_id = "doc_test_export"
     doc_prefix = f"projects/demo_project/docs/{doc_id}/"
+    delete_file(f"{doc_prefix}outputs/metadata.json")
     write_text(f"{doc_prefix}draft.md", "Dòng nháp của tài liệu kiểm thử.")
     
     # 2. Test export endpoint - TXT format
@@ -54,6 +51,7 @@ def test_flow():
         headers=headers
     )
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
+    print("DEBUG Export Response text:", repr(resp.text))
     assert "Dòng nháp của tài liệu kiểm thử." in resp.text
     print("TXT Export successful!")
 

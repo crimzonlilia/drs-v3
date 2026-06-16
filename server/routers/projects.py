@@ -262,6 +262,12 @@ async def save_doc_content(
     if payload is None:
         payload = {}
         
+    if "source_text" in payload:
+        source_content = payload["source_text"]
+        if "<" in source_content and ">" in source_content:
+            source_content = convert_html_to_markdown(source_content)
+        write_text(f"{doc_prefix}assets/source.txt", source_content)
+        
     if "draft" in payload:
         draft_content = payload["draft"]
         if "<" in draft_content and ">" in draft_content:

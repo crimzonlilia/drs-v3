@@ -213,6 +213,7 @@ async def init_db() -> None:
         editorial_feedback_json TEXT,
         proposals_json   TEXT,
         segments_json    TEXT,
+        is_approved      INTEGER DEFAULT 0,
         created_at       TEXT NOT NULL
     );
     """
@@ -231,6 +232,12 @@ async def init_db() -> None:
         await execute_batch([("ALTER TABLE projects ADD COLUMN description TEXT;", [])])
     except Exception:
         pass  # Column likely already exists
+        
+    # Attempt to gracefully add is_approved column for chat_history
+    try:
+        await execute_batch([("ALTER TABLE chat_history ADD COLUMN is_approved INTEGER DEFAULT 0;", [])])
+    except Exception:
+        pass
         
     # Create indexes
     idx_statements = [

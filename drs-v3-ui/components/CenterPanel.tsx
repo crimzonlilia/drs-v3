@@ -288,7 +288,8 @@ export default function CenterPanel({
     const msgsToPersist = chatMessages.filter(m => m.id !== 'welcome')
     
     msgsToPersist.forEach(async (msg) => {
-      const cacheKey = `${msg.id}_${msg.status}_${msg.text?.length || 0}_${msg.sessionId || ''}`
+      const segmentsHash = msg.segments ? JSON.stringify(msg.segments) : ''
+      const cacheKey = `${msg.id}_${msg.status}_${msg.text?.length || 0}_${msg.sessionId || ''}_${msg.isApproved ? '1' : '0'}_${segmentsHash}`
       if (persistedMessagesRef.current.get(msg.id) === cacheKey) {
         return
       }
@@ -1286,7 +1287,19 @@ export default function CenterPanel({
               </div>
               <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => setIsEditingOriginal(!isEditingOriginal)}
+                  onClick={async () => {
+                    if (isEditingOriginal) {
+                      setSaveState('saving')
+                      try {
+                        await saveChapter(projectId, activeFile, { source_text: original })
+                        setSaveState('saved')
+                      } catch (err) {
+                        console.error('Failed to save original text:', err)
+                        setSaveState('failed')
+                      }
+                    }
+                    setIsEditingOriginal(!isEditingOriginal)
+                  }}
                   className="p-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-500 hover:text-slate-700 transition-colors"
                   title={isEditingOriginal ? "Hoàn thành chỉnh sửa" : "Sửa văn bản gốc"}
                 >
