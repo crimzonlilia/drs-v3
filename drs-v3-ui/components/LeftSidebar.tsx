@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { FileText, PanelLeft, Plus, Trash2 } from 'lucide-react'
-import { listChapters, deleteChapter, saveChapter } from '@/app/api-client'
+import React, { useEffect, useState, useRef } from 'react'
+import { FileText, PanelLeft, Plus, Trash2, UploadCloud } from 'lucide-react'
+import { listChapters, deleteChapter, saveChapter, uploadTextBulk } from '@/app/api-client'
 
 interface LeftSidebarProps {
   projectId: string
@@ -79,6 +79,35 @@ export default function LeftSidebar({
     }
   }
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleUploadTxt = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    let cleanName = file.name.replace('.txt', '.md')
+    if (!cleanName.endsWith('.md')) cleanName += '.md'
+    
+    if (fileList.some(f => f.toLowerCase() === cleanName.toLowerCase())) {
+      alert('Tài liệu đã tồn tại.')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+    
+    try {
+      await saveChapter(projectId, cleanName, { draft: '' })
+      await uploadTextBulk(projectId, cleanName, 'ja', 'vi', file)
+      
+      setFileList([...fileList, cleanName])
+      onFileSelect(cleanName)
+      alert(`Đã nạp file thành công! Hệ thống đang dịch ngầm tự động. Các đoạn dịch xong sẽ dần xuất hiện ở tab "Bản dịch đã duyệt".`)
+    } catch (err: any) {
+      alert(`Lỗi khi tải file: ${err.message}`)
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   return (
     <aside className="w-full h-full bg-themeSidebarWorkspace border-r border-themeBorder flex flex-col overflow-hidden">
       <div className="px-5 py-4 border-b border-themeBorder flex items-start justify-between gap-3">
@@ -101,9 +130,26 @@ export default function LeftSidebar({
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none px-3 py-4">
         <div className="mb-2 flex items-center justify-between px-2">
           <h3 className="text-xs font-medium text-themeMuted">Documents</h3>
-          <button onClick={handleAddFile} className="p-1 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard" title="New document">
-            <Plus size={14} />
-          </button>
+          <div className="flex items-center gap-1">
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              accept=".txt" 
+              onChange={handleUploadTxt} 
+              className="hidden" 
+              id="bulk-upload-input"
+            />
+            <label 
+              htmlFor="bulk-upload-input" 
+              className="p-1 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard cursor-pointer" 
+              title="Tải file TXT lên để dịch ngầm (Bulk Translate)"
+            >
+              <UploadCloud size={14} />
+            </label>
+            <button onClick={handleAddFile} className="p-1 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard" title="New document">
+              <Plus size={14} />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-1">

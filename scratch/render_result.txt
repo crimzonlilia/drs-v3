@@ -1,0 +1,71 @@
+Found 24 segments in DB.
+Segment: HK7N-hSawAAS_xY_5edb99, Source: リチャードで
+万バズしたのに
+リチャードこない, Target: [LỖI API OpenRouter: Không thể dịch đoạn này. Mã lỗi: ], BBox: [0.796, 0.007, 0.194, 0.125]
+Segment: HK7N-hSawAAS_xY_e5c8a8, Source: ウママ･･, Target: [s-0] Ừm..., BBox: [0.603, 0.027, 0.072, 0.041]
+Segment: HK7N-hSawAAS_xY_651083, Source: 苦しい, Target: [s-0] Đau đớn, BBox: [0.505, 0.091, 0.072, 0.041]
+Segment: HK7N-hSawAAS_xY_c6be3e, Source: つらい, Target: [s-0] Khổ, BBox: [0.505, 0.134, 0.072, 0.041]
+Segment: HK7N-hSawAAS_xY_70d8f5, Source: 影法師で我慢しろ, Target: [s-0] Chịu đựng bằng cái bóng đi., BBox: [0.796, 0.15, 0.194, 0.041]
+Segment: HK7N-hSawAAS_xY_f120b8, Source: うるさいな余の, Target: [LỖI API OpenRouter: Không thể dịch đoạn này. Mã lỗi: ], BBox: [0.392, 0.091, 0.072, 0.082]
+Segment: HK7N-hSawAAS_xY_9e9bb2, Source: アッ, Target: [LỖI API OpenRouter: Không thể dịch đoạn này. Mã lỗi: ], BBox: [0.203, 0.147, 0.035, 0.035]
+Segment: HK7N-hSawAAS_xY_cc0ce8, Source: 小さいし
+なんか描いた
+ことあるなぁ, Target: [LỖI API OpenRouter: Không thể dịch đoạn này. Mã lỗi: ], BBox: [0.106, 0.169, 0.084, 0.082]
+Segment: HK7N-hSawAAS_xY_0a3ac9, Source: ちなみに本物と
+同じモーションで
+代わりに攻撃する, Target: [LỖI API OpenRouter: Không thể dịch đoạn này. Mã lỗi: ], BBox: [0.796, 0.298, 0.194, 0.082]
+Segment: HK7N-hSawAAS_xY_6f056b, Source: アーウ!!, Target: [LỖI API OpenRouter: Không thể dịch đoạn này. Mã lỗi: ], BBox: [0.603, 0.301, 0.072, 0.041]
+Segment: HK7N-hSawAAS_xY_a8539f, Source: どうみても
+四つん這い
+だけど?, Target: [s-0] Cho dù nhìn thế nào
+[s-1] cũng là bò bằng bốn chân
+[s-2] nhưng mà?, BBox: [0.505, 0.33, 0.072, 0.082]
+Segment: HK7N-hSawAAS_xY_3a2967, Source: まぁ影法師
+だから本物
+みたいに
+喋らないが, Target: [s-0] Thôi nào, chỉ là bóng ma thôi mà
+[s-1] Cho nên đừng mong
+[s-2] Nó sẽ nói chuyện
+[s-3] Giống như bản gốc đâu, BBox: [0.392, 0.33, 0.072, 0.125]
+Segment: HK7N-hSawAAS_xY_23629b, Source: 韓国語
+じゃねぇか, Target: [s-0] Tiếng Hàn
+[s-1] Đây chẳng phải là sao?, BBox: [0.106, 0.409, 0.084, 0.082]
+Segment: HK7N-hSawAAS_xY_fffa41, Source: チョアヨ〜♪//, Target: [s-0] Choayo~♪//, BBox: [0.203, 0.392, 0.106, 0.041]
+Segment: HK7N-hSawAAS_xY_1e636d, Source: チョマヨ~, Target: [s-0] Chomayo~, BBox: [0.035, 0.49, 0.072, 0.041]
+Segment: HK7N-hSawAAS_xY_315004, Source: 俺は影法師すら
+満足に扱え
+ないんだ･･･, Target: [s-0] Ta thậm chí còn không thể điều khiển bóng mình
+[s-1] một cách thỏa đáng
+[s-2] nổi..., BBox: [0.796, 0.55, 0.194, 0.082]
+Segment: HK7N-hSawAAS_xY_09110a, Source: 笑えよ, Target: [s-0] Cười đi!, BBox: [0.796, 0.633, 0.194, 0.041]
+Segment: HK7N-hSawAAS_xY_5f738f, Source: ちょっと
+ジョン
+待って
+ねぇ待って, Target: [s-0] Khoan đã
+[s-1] John
+[s-2] đợi đã
+[s-3] Này, đợi đã, BBox: [0.699, 0.633, 0.072, 0.125]
+Segment: HK7N-hSawAAS_xY_2b95dd, Source: あれ
+スピキじゃん
+?!, Target: [s-0] Kia
+[s-1] Spiky đúng không
+[s-2] ?!, BBox: [0.603, 0.654, 0.072, 0.082]
+Segment: HK7N-hSawAAS_xY_2bc240, Source: ほら本人も
+スピキって
+言ってるし, Target: [s-0] Nhìn nè, chính Richa cũng
+[s-1] nói là "speeki"
+[s-2] mà, BBox: [0.505, 0.654, 0.072, 0.091]
+Segment: HK7N-hSawAAS_xY_ac8ac7, Source: ウァア!スピキ
+デルジバセヨ!, Target: [s-0] Ồ Ồ Ồ!
+[s-1] Gai nhọn
+[s-2] Deljibaseyo!, BBox: [0.392, 0.595, 0.106, 0.082]
+Segment: HK7N-hSawAAS_xY_a0adf6, Source: .wav, Target: [s-0] .[s-1] wav, BBox: [0.463, 0.676, 0.035, 0.02]
+Segment: HK7N-hSawAAS_xY_c06997, Source: スピキ
+リチャードに
+戦わせてるの?!, Target: [s-0] Spiki
+[s-1] với Richard
+[s-2] Cậu đang cho chúng nó đánh nhau à?!, BBox: [0.392, 0.865, 0.106, 0.082]
+Segment: HK7N-hSawAAS_xY_ba0366, Source: ねぇってば
+ジョン?!!!, Target: [s-0] Này, tớ nói này!
+[s-1] John?!!!, BBox: [0.106, 0.865, 0.084, 0.082]
+Rendering succeeded! Generated 1531598 bytes.

@@ -216,7 +216,8 @@ async def run_translation(request: TranslateRequest, current_user: dict = Depend
                 validation_issues=session.validation_issues,
                 editorial_score=session.editorial_score,
                 editorial_feedback=session.editorial_feedback,
-                audit_report=session.audit_report
+                audit_report=session.audit_report,
+                model_name=translation_agent.generator.model
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Pipeline processing failed: {e}")
@@ -304,7 +305,8 @@ async def get_session_status(session_id: str, current_user: dict = Depends(get_c
     return {
         "session_id": session.session_id,
         "pipeline_status": session.pipeline_status,
-        "pipeline_error": session.pipeline_error
+        "pipeline_error": session.pipeline_error,
+        "model_name": session.model_name
     }
 
 
@@ -496,7 +498,7 @@ Answer naturally, concisely, and helpfully. Keep your tone professional.
                 message=request.message,
                 history=request.history
             )
-            return ChatResponse(reply=reply)
+            return ChatResponse(reply=reply, model_name=generator.model)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat generation failed: {e}")
 
@@ -525,13 +527,13 @@ async def upsert_history_message(
         UPDATE chat_history SET
             text = ?, original_text = ?, instruction = ?, status = ?, session_id = ?, qa_score = ?,
             editorial_score_json = ?, validation_issues_json = ?, editorial_feedback_json = ?,
-            proposals_json = ?, segments_json = ?, is_approved = ?
+            proposals_json = ?, segments_json = ?, is_approved = ?, model = ?
         WHERE id = ?
         """
         params = [
             request.text, request.originalText, request.instruction, request.status, request.sessionId, request.qaScore,
             editorial_score_json, validation_issues_json, editorial_feedback_json,
-            proposals_json, segments_json, 1 if request.isApproved else 0, request.id
+            proposals_json, segments_json, 1 if request.isApproved else 0, request.model, request.id
         ]
         await execute_query(sql, params)
     else:
@@ -539,8 +541,8 @@ async def upsert_history_message(
         INSERT INTO chat_history (
             id, project_id, doc_id, sender, text, original_text, instruction, status, session_id,
             is_image_workflow, is_general_chat, asset_id, qa_score, editorial_score_json,
-            validation_issues_json, editorial_feedback_json, proposals_json, segments_json, is_approved, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            validation_issues_json, editorial_feedback_json, proposals_json, segments_json, is_approved, model, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = [
             request.id, request.project_id, request.doc_id, request.sender, request.text,
@@ -548,7 +550,7 @@ async def upsert_history_message(
             1 if request.isImageWorkflow else 0, 1 if request.isGeneralChat else 0,
             request.assetId, request.qaScore,
             editorial_score_json, validation_issues_json, editorial_feedback_json,
-            proposals_json, segments_json, 1 if request.isApproved else 0, datetime.now().isoformat()
+            proposals_json, segments_json, 1 if request.isApproved else 0, request.model, datetime.now().isoformat()
         ]
         await execute_query(sql, params)
         return {"status": "success"}
@@ -604,7 +606,91 @@ async def get_chat_history(
             "proposals": json.loads(r["proposals_json"]) if r.get("proposals_json") else [],
             "segments": json.loads(r["segments_json"]) if r.get("segments_json") else [],
             "isApproved": bool(r.get("is_approved", 0)),
+            "model": r.get("model") or "",
             "timestamp": r["created_at"][11:16] if r.get("created_at") else ""
         })
     return chat_list
+
+
+async def run_bulk_translation_pipeline_task(
+    project_id: str,
+    doc_id: str,
+    source_lang: str,
+    target_lang: str,
+    fast_mode: bool = True
+):
+    """
+    Background task that iterates over all un-translated segments of a document
+    and translates them using TranslationAgent.
+    """
+    import asyncio
+    from core.memory import ProjectMemory
+    from core.agents import TranslationAgent
+    from core.utils.db import execute_query
+    from datetime import datetime
+
+    mem = ProjectMemory(project_id)
+    
+    # Get project description
+    project_rows = await execute_query("SELECT description FROM projects WHERE id = ?", [project_id])
+    project_description = project_rows[0].get("description", "") if project_rows else ""
+    
+    # Get segments
+    segments = await execute_query(
+        "SELECT segment_id, source_text FROM segments WHERE project_id = ? AND doc_id = ? ORDER BY id ASC",
+        [project_id, doc_id]
+    )
+    
+    if not segments:
+        return
+        
+    print(f"[BULK PIPELINE] Starting background translation for {len(segments)} segments...")
+    
+    async with TranslationAgent(mem) as translation_agent:
+        context_window = []
+        for seg in segments:
+            seg_id = seg["segment_id"]
+            source_txt = seg["source_text"]
+            
+            # Check if it's already translated
+            check = await execute_query("SELECT target_text, approved_at FROM segments WHERE project_id = ? AND doc_id = ? AND segment_id = ?", [project_id, doc_id, seg_id])
+            if check and check[0].get("target_text") and check[0].get("approved_at"):
+                context_window.append(check[0].get("target_text"))
+                if len(context_window) > 5:
+                    context_window.pop(0)
+                continue
+                
+            if not source_txt.strip():
+                continue
+                
+            print(f"[BULK PIPELINE] Translating segment {seg_id}...")
+            try:
+                # Fast mode: only translation generator
+                gen_result = await translation_agent.translate(
+                    source_text=source_txt,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    content_type="novel",
+                    project_description=project_description,
+                    context_sentences=context_window
+                )
+                
+                target_text = gen_result.draft
+                approved_at = datetime.utcnow().isoformat() + "Z"
+                
+                # Update DB directly as "approved"
+                await execute_query(
+                    "UPDATE segments SET target_text = ?, approved_at = ?, approved_by = 'system' WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
+                    [target_text, approved_at, project_id, doc_id, seg_id]
+                )
+                
+                # Slide window
+                context_window.append(source_txt)
+                if len(context_window) > 5:
+                    context_window.pop(0)
+                    
+            except Exception as e:
+                print(f"[BULK PIPELINE] Error translating segment {seg_id}: {e}")
+                
+    print(f"[BULK PIPELINE] Finished background translation for {doc_id}.")
 

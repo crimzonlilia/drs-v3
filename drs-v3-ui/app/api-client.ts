@@ -519,6 +519,38 @@ export async function getDocumentSegments(projectId: string, docId: string, asse
   return await apiFetch(`/api/docs/${docId}/segments?project_id=${projectId}${assetId ? `&asset_id=${encodeURIComponent(assetId)}` : ''}`);
 }
 
+export async function uploadTextBulk(
+  projectId: string,
+  docId: string,
+  sourceLang: string,
+  targetLang: string,
+  file: File
+): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const token = localStorage.getItem('token');
+  const headers: HeadersInit = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}/api/docs/${docId}/upload-text-bulk?project_id=${projectId}&source_lang=${sourceLang}&target_lang=${targetLang}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  if (!res.ok) {
+    let msg = 'Failed to upload text file';
+    try {
+      const data = await res.json();
+      msg = data.detail || msg;
+    } catch (e) {}
+    throw new Error(msg);
+  }
+  return await res.json();
+}
+
 export async function updateSegmentText(projectId: string, docId: string, segmentId: string, targetText: string): Promise<any> {
   return await apiFetch(`/api/docs/${docId}/segments/${segmentId}`, {
     method: 'PUT',

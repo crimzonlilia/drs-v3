@@ -214,6 +214,7 @@ async def init_db() -> None:
         proposals_json   TEXT,
         segments_json    TEXT,
         is_approved      INTEGER DEFAULT 0,
+        model            TEXT,
         created_at       TEXT NOT NULL
     );
     """
@@ -236,6 +237,12 @@ async def init_db() -> None:
     # Attempt to gracefully add is_approved column for chat_history
     try:
         await execute_batch([("ALTER TABLE chat_history ADD COLUMN is_approved INTEGER DEFAULT 0;", [])])
+    except Exception:
+        pass
+
+    # Attempt to gracefully add model column for chat_history
+    try:
+        await execute_batch([("ALTER TABLE chat_history ADD COLUMN model TEXT;", [])])
     except Exception:
         pass
         

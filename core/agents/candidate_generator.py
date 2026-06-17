@@ -11,6 +11,7 @@ import httpx
 from dataclasses import dataclass
 from config import cfg
 from core.memory import ProjectMemory
+from core.utils.text import split_sentences
 
 async def google_translate(text: str, source_lang: str, target_lang: str) -> str:
     if not text.strip():
@@ -52,9 +53,12 @@ Use the raw translation draft as a starting point, but refine it to ensure it so
 
 Rules:
 - Follow the glossary, style guide, and entity list exactly.
+- Sentence-level Markers: You must prepend a marker `[s-X]` before each translated sentence, where X is the 0-based index of the corresponding source sentence.
+- If you split a source sentence into multiple translated sentences, repeat the same marker for both (e.g. `[s-0] Sentence A. [s-0] Sentence B.`).
+- If you combine multiple source sentences into one translated sentence, use the primary/first source index (e.g. `[s-0] Combined sentence.`).
 - Do NOT invent terms or names not in the approved lists.
 - Preserve tone and register as specified.
-- Output ONLY the translated text. No explanations, no notes.
+- Output ONLY the translated text with these inline markers. No explanations, no notes.
 
 Source language: {source_lang}
 Target language: {target_lang}
@@ -103,6 +107,30 @@ class CandidateGenerator:
             timeout=60.0,
         )
 
+    async def _post_chat_completion_with_retry(self, payload: dict, max_retries: int = 5) -> dict:
+        import asyncio
+        delay = 1.0
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                response = await self._client.post("chat/completions", json=payload)
+                response.raise_for_status()
+                data = response.json()
+                if "error" in data:
+                    err_msg = data["error"].get("message", "Unknown OpenRouter error")
+                    err_code = data["error"].get("code", "unknown")
+                    raise RuntimeError(f"OpenRouter API error (code {err_code}): {err_msg}")
+                if "choices" not in data or not data["choices"]:
+                    raise RuntimeError("OpenRouter API returned empty choices")
+                return data
+            except Exception as e:
+                last_exc = e
+                print(f"[OpenRouter API] Attempt {attempt+1}/{max_retries} failed: {ascii(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+        raise last_exc
+
     async def generate(
         self,
         source_text: str,
@@ -111,6 +139,7 @@ class CandidateGenerator:
         content_type: str = "general",
         temperature: float | None = None,
         project_description: str = "",
+        context_sentences: list[str] | None = None,
     ) -> GenerationResult:
         # Step 1: Fetch instant raw translation from Google Translate
         raw_translation = await google_translate(source_text, source_lang, target_lang)
@@ -129,10 +158,18 @@ class CandidateGenerator:
             memory_context=memory_context or "(No approved memory yet for this project)",
         )
 
+        # Segment source text
+        source_sentences = split_sentences(source_text)
+        segmented_source = "".join(f"[s-{idx}] {sentence}" for idx, sentence in enumerate(source_sentences))
+
         user_prompt = user_tmpl.format(
-            source_text=source_text,
+            source_text=segmented_source,
             raw_translation=raw_translation
         )
+
+        if context_sentences:
+            context_block = "\n\nContext / Neighboring Text on the same page:\n" + "\n".join(f"- {s}" for s in context_sentences)
+            user_prompt += context_block
 
         payload = {
             "model": self.model,
@@ -145,14 +182,12 @@ class CandidateGenerator:
         }
 
         try:
-            response = await self._client.post("chat/completions", json=payload)
-            response.raise_for_status()
-            data = response.json()
+            data = await self._post_chat_completion_with_retry(payload)
             draft = data["choices"][0]["message"]["content"].strip()
             usage = data.get("usage", {})
         except Exception as e:
             print(f"OpenRouter API call failed in CandidateGenerator: {e}")
-            draft = raw_translation
+            draft = f"[LỖI API OpenRouter: Không thể dịch đoạn này. Mã lỗi: {str(e)}]"
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             data = {"choices": [{"message": {"content": draft}}]}
 
@@ -198,11 +233,15 @@ class CandidateGenerator:
             memory_context=memory_context or "(No approved memory yet for this project)",
         )
 
+        # Segment source text
+        source_sentences = split_sentences(source_text)
+        segmented_source = "".join(f"[s-{idx}] {sentence}" for idx, sentence in enumerate(source_sentences))
+
         user_prompt = f"""\
 Translate/revise the following text, addressing the review feedback below.
 
 Source Text:
-{source_text}
+{segmented_source}
 
 Previous Draft:
 {previous_draft}
@@ -210,7 +249,7 @@ Previous Draft:
 Feedback/Issues to Correct:
 {feedback}
 
-Output ONLY the revised translation. No explanations, no notes.
+Output ONLY the revised translation preserving the [s-X] markers exactly. No explanations, no notes.
 """
 
         payload = {
@@ -223,10 +262,7 @@ Output ONLY the revised translation. No explanations, no notes.
             ],
         }
 
-        response = await self._client.post("chat/completions", json=payload)
-        response.raise_for_status()
-        data = response.json()
-
+        data = await self._post_chat_completion_with_retry(payload)
         draft = data["choices"][0]["message"]["content"].strip()
         usage = data.get("usage", {})
 
@@ -288,9 +324,7 @@ Do not include any explanations, notes, or markdown wrappers.
         }
 
         try:
-            response = await self._client.post("/chat/completions", json=payload)
-            response.raise_for_status()
-            data = response.json()
+            data = await self._post_chat_completion_with_retry(payload)
             content = data["choices"][0]["message"]["content"].strip()
             
             content_clean = re.sub(r"^```(?:json)?\s*", "", content, flags=re.IGNORECASE)
@@ -322,9 +356,7 @@ Do not include any explanations, notes, or markdown wrappers.
         }
 
         try:
-            response = await self._client.post("chat/completions", json=payload)
-            response.raise_for_status()
-            data = response.json()
+            data = await self._post_chat_completion_with_retry(payload)
             return data["choices"][0]["message"]["content"].strip()
         except Exception as e:
             print(f"OpenRouter API call failed in CandidateGenerator.chat: {e}")

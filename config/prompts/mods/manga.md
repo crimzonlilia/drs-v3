@@ -1,2 +1,3 @@
 - Since this is manga, keep translations extremely concise to fit inside text bubbles.
 - Use colloquial expressions and dramatic/expressive punctuation appropriate for speech bubbles.
+- If the source text contains Japanese furigana annotations formatted as `BaseText[Furigana]`, preserve this structure in the translation: `TranslatedBase[TranslatedFurigana]`. Translate both parts accurately, matching the base text to its translation and the furigana to its translated annotation.

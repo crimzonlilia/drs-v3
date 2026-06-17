@@ -55,8 +55,12 @@ async def extract_via_llm(image_path: str, source_lang: str) -> list[OCRBlock]:
             f"You are a professional manga/comic translation OCR engine. "
             f"Please transcribe all text bubbles and text blocks from the provided page image in {source_lang.upper()} language. "
             f"For each text bubble/block, estimate its normalized bounding box [x_min, y_min, width, height] relative to the overall image size (scale from 0.0 to 1.0).\n\n"
+            f"CRITICAL RULES:\n"
+            f"1. A single text bubble or text box must correspond to exactly ONE item. Do NOT split individual lines within the same bubble/box into separate items. Group them into a single continuous text string and a single bounding box that covers the entire bubble.\n"
+            f"2. Keep in mind that Japanese manga text is read vertically from right to left. Ensure that vertical lines within the same bubble/box are concatenated in the correct reading order to form a single continuous sentence.\n"
+            f"3. If a Japanese kanji or phrase has small furigana text next to it that indicates a custom reading or name pronunciation (not the standard reading of the kanji), transcribe it using the format: BaseText[Furigana]. Example: if '所長' has 'オルガマリー' written next to it, transcribe it as '所長[オルガマリー]'. Only do this when the furigana indicates a custom/special reading.\n\n"
             f"Return ONLY a valid JSON array of objects, with no markdown code blocks or extra text. Example:\n"
-            f"[\n  {{\"text\": \"transcribed text\", \"bbox\": [x_min, y_min, width, height]}}\n]"
+            f"[\n  {{\"text\": \"transcribed continuous text from bubble\", \"bbox\": [x_min, y_min, width, height]}}\n]"
         )
         
         payload = {

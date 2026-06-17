@@ -24,6 +24,8 @@ async def seed():
     # Clean old records and folders
     print("Cleaning up old database records...")
     await execute_query("DELETE FROM segments")
+    await execute_query("DELETE FROM chat_history")
+    await execute_query("DELETE FROM assets")
     await execute_query("DELETE FROM r2_emulated_files")
     await execute_query("DELETE FROM project_members")
     await execute_query("DELETE FROM projects")

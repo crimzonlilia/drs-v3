@@ -21,6 +21,7 @@ from core.utils.db import execute_query, execute_batch
 from core.utils.r2 import read_text, write_binary, write_text, read_binary
 from core.ocr.router import OCRRouter
 from server.utils.graphics import render_manga_text_layers
+from core.utils.text_chunker import chunk_text
 
 router = APIRouter(prefix="/api/docs", tags=["Documents"])
 
@@ -414,22 +415,29 @@ async def run_image_translation_pipeline_task(
             print(f"[IMAGE PIPELINE] No text segments to translate for asset {asset_id}.")
         else:
             print(f"[IMAGE PIPELINE] Found {len(segments)} segments to translate.")
+            all_source_texts = [s["source_text"] for s in segments if s.get("source_text", "").strip()]
             async with TranslationAgent(mem) as translation_agent:
-                for seg in segments:
+                session.model_name = translation_agent.generator.model
+                for idx, seg in enumerate(segments):
                     source_txt = seg["source_text"]
                     seg_id = seg["segment_id"]
                     if not source_txt.strip():
                         continue
                         
-                    print(f"[IMAGE PIPELINE] Translating segment: {source_txt}")
+                    if idx > 0:
+                        import asyncio
+                        await asyncio.sleep(0.5)
+                        
+                    print(f"[IMAGE PIPELINE] Translating segment: {ascii(source_txt)}")
                     gen_result = await translation_agent.translate(
                         source_text=source_txt,
                         source_lang=source_lang,
                         target_lang=target_lang,
                         content_type="comic",
-                        project_description=project_description
+                        project_description=project_description,
+                        context_sentences=all_source_texts
                     )
-                    print(f"[IMAGE PIPELINE] Translated to: {gen_result.draft}")
+                    print(f"[IMAGE PIPELINE] Translated to: {ascii(gen_result.draft)}")
                     
                     await execute_query(
                         "UPDATE segments SET target_text = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
@@ -438,10 +446,35 @@ async def run_image_translation_pipeline_task(
                     
         session.pipeline_status["draft_translation"] = "success"
         session.pipeline_status["review"] = "success"
+        
+        # 4. Generate initial preview render
+        try:
+            print(f"[IMAGE PIPELINE] Generating initial preview render for asset: {asset_id}")
+            rendered_segments = await execute_query(
+                "SELECT segment_id, source_text, target_text, bbox FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?",
+                [project_id, doc_id, asset_id]
+            )
+            
+            rendered_bytes = render_manga_text_layers(
+                image_bytes=image_bytes,
+                segments=rendered_segments,
+                project_id=project_id,
+                font_name="Arial",
+                font_size=18
+            )
+            
+            rendered_key = f"projects/{project_id}/docs/{doc_id}/rendered/{asset_id}"
+            write_binary(rendered_key, rendered_bytes, "image/png")
+            print(f"[IMAGE PIPELINE] Initial preview render saved successfully to: {rendered_key}")
+            session.pipeline_status["render"] = "success"
+        except Exception as render_err:
+            print(f"[IMAGE PIPELINE] Warning: Failed to pre-render preview image: {ascii(render_err)}")
+            session.pipeline_status["render"] = "failed"
+            
         print(f"[IMAGE PIPELINE] Finished pipeline successfully for asset: {asset_id}")
         
     except Exception as e:
-        print(f"[IMAGE PIPELINE] Exception occurred: {e}")
+        print(f"[IMAGE PIPELINE] Exception occurred: {ascii(e)}")
         for stage in ["ocr", "context_retrieval", "draft_translation"]:
             if session.pipeline_status.get(stage) == "running":
                 session.pipeline_status[stage] = "failed"
@@ -455,7 +488,7 @@ async def run_image_translation_pipeline_task(
             gate = ApprovalGate(mem)
             gate.save_translation_draft(session)
         except Exception as e:
-            print(f"[IMAGE PIPELINE] Error saving draft: {e}")
+            print(f"[IMAGE PIPELINE] Error saving draft: {ascii(e)}")
 
 
 @router.post("/{doc_id}/translate-image")
@@ -648,4 +681,67 @@ async def update_segment_text(
     return {
         "status": "success",
         "message": f"Segment {segment_id} updated successfully"
+    }
+
+
+@router.post("/{doc_id}/upload-text-bulk")
+async def upload_text_bulk(
+    doc_id: str,
+    project_id: str,
+    source_lang: str,
+    target_lang: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Upload a large .txt file, chunk it, and queue it for background translation.
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    contents = await file.read()
+    try:
+        text = contents.decode('utf-8')
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded text.")
+        
+    chunks = chunk_text(text, max_chars=1500)
+    
+    # Save the original file to R2
+    r2_path = f"projects/{project_id}/docs/{doc_id}/assets/{file.filename}"
+    write_binary(r2_path, contents, "text/plain")
+    
+    # Clear existing segments for this document
+    await execute_query("DELETE FROM segments WHERE project_id = ? AND doc_id = ?", [project_id, doc_id])
+    
+    # Insert new segments
+    db_statements = []
+    for i, chunk in enumerate(chunks):
+        segment_id = f"seg_{i:04d}"
+        db_statements.append((
+            """
+            INSERT INTO segments (
+                project_id, doc_id, segment_id, segment_type, source_text, target_text, asset_id
+            ) VALUES (?, ?, ?, 'paragraph', ?, '', ?)
+            """,
+            [project_id, doc_id, segment_id, chunk, file.filename]
+        ))
+        
+    if db_statements:
+        await execute_batch(db_statements)
+        
+    # Queue background task
+    from server.routers.translation import run_bulk_translation_pipeline_task
+    background_tasks.add_task(
+        run_bulk_translation_pipeline_task,
+        project_id=project_id,
+        doc_id=doc_id,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        fast_mode=True
+    )
+    
+    return {
+        "status": "success",
+        "message": f"File chunked into {len(chunks)} segments and background translation started."
     }

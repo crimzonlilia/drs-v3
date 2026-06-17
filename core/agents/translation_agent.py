@@ -24,6 +24,7 @@ class TranslationAgent:
         target_lang: str,
         content_type: str = "general",
         project_description: str = "",
+        context_sentences: List[str] | None = None,
     ) -> GenerationResult:
         """
         Produce a high-quality translation draft.
@@ -34,6 +35,7 @@ class TranslationAgent:
             target_lang=target_lang,
             content_type=content_type,
             project_description=project_description,
+            context_sentences=context_sentences,
         )
 
     def load_project_memory(

@@ -46,25 +46,115 @@ import ReactMarkdown from 'react-markdown'
 
 type WorkflowStep = 'read' | 'edit' | 'review' | 'approve'
 
-const splitSentences = (text: string) => {
-  if (!text) return []
-  const matches = text.match(/([^.?!。！？\n\r]+[.?!。！？\n\r]*)/g)
-  return matches ? matches.map(s => s.trim()).filter(Boolean) : [text]
+const splitSentences = (txt: string) => {
+  if (!txt) return []
+  const sentences: string[] = []
+  let current = ''
+  let inQuotes = false
+  let quoteChar = ''
+  const punctTerminators = new Set(['.', '!', '?', '。', '！', '？'])
+  const newlines = new Set(['\n', '\r'])
+  
+  for (let i = 0; i < txt.length; i++) {
+    const char = txt[i]
+    current += char
+    
+    if (char === '"' || char === '“' || char === '”' || char === '「' || char === '」' || char === '『' || char === '』') {
+      if (!inQuotes && (char === '"' || char === '“' || char === '「' || char === '『')) {
+        inQuotes = true
+        quoteChar = char
+      } else if (inQuotes) {
+        if ((quoteChar === '「' && char === '」') || (quoteChar === '『' && char === '』') || (quoteChar === '“' && char === '”') || (quoteChar === '"' && char === '"')) {
+          inQuotes = false
+          quoteChar = ''
+          
+          let hasTerminatorBefore = current.length > 1 && (punctTerminators.has(current[current.length - 2]) || newlines.has(current[current.length - 2]))
+          
+          let nextCharIdx = i + 1
+          while (nextCharIdx < txt.length && txt[nextCharIdx] === ' ') nextCharIdx++
+          let nextChar = nextCharIdx < txt.length ? txt[nextCharIdx] : ''
+          
+          let nextIsUppercase = nextChar.length === 1 && nextChar.toUpperCase() === nextChar && nextChar.toLowerCase() !== nextChar
+          let nextIsNewline = newlines.has(nextChar)
+          let nextIsBracket = ['「','『','”','"','“'].includes(nextChar)
+          
+          if (hasTerminatorBefore || nextIsUppercase || nextIsNewline || nextIsBracket) {
+            if (!(i + 1 < txt.length && (punctTerminators.has(txt[i+1]) || newlines.has(txt[i+1])))) {
+              let peek = i + 1
+              while (peek < txt.length && (txt[peek] === ' ' || txt[peek] === '\n' || txt[peek] === '\r')) {
+                 current += txt[peek]
+                 peek++
+              }
+              if (current.trim()) sentences.push(current)
+              current = ''
+              i = peek - 1
+            }
+          }
+        }
+      }
+    } else if (!inQuotes) {
+      if (punctTerminators.has(char)) {
+        if (i + 1 < txt.length && punctTerminators.has(txt[i+1])) continue
+        if (i + 1 < txt.length && ['」', '』', '”', '"'].includes(txt[i+1])) continue
+        
+        let peek = i + 1
+        while (peek < txt.length && (txt[peek] === ' ' || txt[peek] === '\n' || txt[peek] === '\r')) {
+           current += txt[peek]
+           peek++
+        }
+        if (current.trim()) sentences.push(current)
+        current = ''
+        i = peek - 1
+      } else if (newlines.has(char)) {
+        if (i + 1 < txt.length && newlines.has(txt[i+1])) continue
+        
+        let peek = i + 1
+        while (peek < txt.length && (txt[peek] === ' ' || txt[peek] === '\n' || txt[peek] === '\r')) {
+           current += txt[peek]
+           peek++
+        }
+        if (current.trim()) sentences.push(current)
+        current = ''
+        i = peek - 1
+      }
+    }
+  }
+  if (current.trim()) sentences.push(current)
+  return sentences.filter(Boolean)
 }
 
 const parseUserMessage = (msg: string) => {
-  const jpRegex = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u4e00-\u9fff]+/g
-  const matches = msg.match(jpRegex)
-  if (matches && matches.length > 0) {
-    const originalText = matches.join(' ')
-    const instruction = msg.replace(originalText, '').replace(/[\s,.:;!"'""“”:：、。]+/g, ' ').trim()
-    return { originalText, instruction }
+  const jpCharRegex = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u4e00-\u9fff]/;
+  
+  let firstIdx = -1;
+  let lastIdx = -1;
+  for (let i = 0; i < msg.length; i++) {
+    if (jpCharRegex.test(msg[i])) {
+      if (firstIdx === -1) firstIdx = i;
+      lastIdx = i;
+    }
   }
-  return { originalText: '', instruction: msg }
+  
+  if (firstIdx !== -1) {
+    while (firstIdx > 0 && /[\s\n"'「『\[（(]/.test(msg[firstIdx - 1])) {
+      firstIdx--;
+    }
+    while (lastIdx < msg.length - 1 && /[\s\n"'」』\]）).!?。！？]/.test(msg[lastIdx + 1])) {
+      lastIdx++;
+    }
+    
+    const originalText = msg.substring(firstIdx, lastIdx + 1).trim();
+    const instruction = (msg.substring(0, firstIdx) + " " + msg.substring(lastIdx + 1)).trim();
+    
+    return { originalText, instruction };
+  }
+  
+  return { originalText: '', instruction: msg };
 }
 
 const renderFormattedText = (text: string) => {
   if (!text) return null
+  const cleanText = text.replace(/\[s-\d+\]\s*/g, '')
   return (
     <ReactMarkdown
       components={{
@@ -76,7 +166,7 @@ const renderFormattedText = (text: string) => {
         li: ({ node, ...props }) => <li className="mb-0.5" {...props} />
       }}
     >
-      {text}
+      {cleanText}
     </ReactMarkdown>
   )
 }
@@ -102,6 +192,7 @@ interface ChatMessage {
   assetId?: string
   segments?: any[]
   isGeneralChat?: boolean
+  model?: string
 }
 
 interface CenterPanelProps {
@@ -183,6 +274,32 @@ export default function CenterPanel({
 
   // Active view for manga editor side-by-side (original or rendered)
   const [mangaViewModes, setMangaViewModes] = useState<Record<string, 'original' | 'rendered'>>({})
+
+  // Tab and segment states for slide-out view
+  const [activeTab, setActiveTab] = useState<'approved' | 'source'>('approved')
+  const [segments, setSegments] = useState<any[]>([])
+  const [expandedSegments, setExpandedSegments] = useState<Set<string>>(new Set())
+
+  const toggleSegment = (segId: string) => {
+    const next = new Set(expandedSegments)
+    if (next.has(segId)) next.delete(segId)
+    else next.add(segId)
+    setExpandedSegments(next)
+  }
+
+  useEffect(() => {
+    async function loadSegments() {
+      if (showSourcePanel && projectId && activeFile) {
+        try {
+          const segs = await getDocumentSegments(projectId, activeFile)
+          setSegments(segs || [])
+        } catch (e) {
+          console.error('Failed to load segments:', e)
+        }
+      }
+    }
+    loadSegments()
+  }, [showSourcePanel, projectId, activeFile, chatMessages])
 
   const originalSentences = useMemo(() => splitSentences(original), [original])
 
@@ -385,7 +502,8 @@ export default function CenterPanel({
               setChatMessages(prev => prev.map(m => m.sessionId === activeSessionId ? {
                 ...m,
                 status: 'done',
-                segments: segs
+                segments: segs,
+                model: res.model_name || ''
               } : m))
             }
             
@@ -529,7 +647,8 @@ export default function CenterPanel({
         editorialScore: finalSession.editorial_score || {},
         validationIssues: finalSession.validation_issues || [],
         editorialFeedback: finalSession.editorial_feedback || [],
-        proposals: finalSession.memory_proposals || []
+        proposals: finalSession.memory_proposals || [],
+        model: finalSession.model_name || ''
       } : m))
       
       setTranslation(prev => prev ? `${prev}\n${draftText}` : draftText)
@@ -587,7 +706,8 @@ export default function CenterPanel({
       setChatMessages(prev => prev.map(m => m.id === aiMsg.id ? {
         ...m,
         status: 'done',
-        text: res.reply
+        text: res.reply,
+        model: res.model_name || ''
       } : m))
     } catch (err: any) {
       console.error(err)
@@ -803,6 +923,7 @@ export default function CenterPanel({
       id: newAiMsgId,
       sender: 'ai',
       text: '',
+      originalText: originalMsg.originalText,
       status: 'processing',
       processingStep: 'literal',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -942,13 +1063,18 @@ export default function CenterPanel({
             </label>
           </div>
 
-          {/* View Source panel trigger */}
+          {/* View Source & Approved Translation panel trigger */}
           <button 
             onClick={() => setShowSourcePanel(!showSourcePanel)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${
+              showSourcePanel 
+                ? 'border-indigo-500 bg-indigo-500/5 text-indigo-600 dark:text-indigo-400' 
+                : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900'
+            }`}
+            title="Xem tổng hợp bản dịch và bản gốc"
           >
             <BookOpen size={13} />
-            <span>Văn bản gốc</span>
+            <span>Bản dịch & Gốc</span>
           </button>
 
           {/* Export/Download Button */}
@@ -1021,6 +1147,11 @@ export default function CenterPanel({
                             {isUser ? 'Bạn' : 'Hệ thống'}
                           </span>
                           <div className="flex items-center gap-2 select-none">
+                            {!isUser && msg.model && (
+                              <span className="text-[10px] text-indigo-500/80 bg-indigo-500/5 px-1.5 py-0.5 rounded font-mono border border-indigo-500/10">
+                                {msg.model}
+                              </span>
+                            )}
                             <span className="text-[10px] text-slate-400">
                               {msg.timestamp}
                             </span>
@@ -1058,17 +1189,49 @@ export default function CenterPanel({
                         {/* Text translation result */}
                         {msg.status === 'done' && (!msg.isImageWorkflow || isUser) && (
                           <div className="space-y-2">
-                            <div 
-                              onClick={() => setInspectedMsgId(inspectedMsgId === msg.id ? null : msg.id)}
-                              className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/50 p-1.5 rounded-lg transition-colors font-serif whitespace-pre-wrap select-text"
-                              title="Click để hiển thị câu gốc"
-                            >
-                              {renderFormattedText(msg.text)}
-                            </div>
-                            
-                            {inspectedMsgId === msg.id && msg.originalText && (
-                              <div className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900/40 rounded-lg border-l-2 border-indigo-400 text-slate-400 dark:text-slate-450 text-[11px] font-sans italic">
-                                {msg.originalText}
+                            {isUser || !msg.originalText ? (
+                              <div 
+                                className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed font-serif whitespace-pre-wrap select-text"
+                              >
+                                {renderFormattedText(msg.text)}
+                              </div>
+                            ) : (
+                              <div className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed font-serif whitespace-pre-wrap select-text block">
+                                {(() => {
+                                  const ts = splitSentences(msg.text)
+                                  const ss = splitSentences(msg.originalText)
+                                  return ts.map((sentence, index) => {
+                                    const key = `${msg.id}-${index}`
+                                    const isExpanded = inspectedMsgId === key
+                                    
+                                    let sIdx = index
+                                    let cleanSentence = sentence
+                                    const match = sentence.match(/^\[s-(\d+)\]\s*(.*)/s)
+                                    if (match) {
+                                      sIdx = parseInt(match[1], 10)
+                                      cleanSentence = match[2]
+                                    } else {
+                                      if (ts.length > 0 && ss.length > 0 && ts.length !== ss.length) {
+                                        sIdx = Math.min(Math.floor(index * (ss.length / ts.length)), ss.length - 1)
+                                      }
+                                    }
+                                    
+                                    const sourceSentence = ss[sIdx] || ss[ss.length - 1] || msg.originalText
+                                    
+                                    return (
+                                      <span key={key} className="inline group cursor-pointer" onClick={() => setInspectedMsgId(isExpanded ? null : key)}>
+                                        {isExpanded && sourceSentence && (
+                                          <span className="block my-2 p-2.5 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border-l-2 border-indigo-400 text-indigo-900 dark:text-indigo-200 font-sans text-[12px] leading-relaxed whitespace-pre-wrap font-medium shadow-sm w-full">
+                                            {sourceSentence}
+                                          </span>
+                                        )}
+                                        <span className="hover:bg-indigo-500/10 dark:hover:bg-indigo-400/20 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors rounded" title="Click để xem bản gốc">
+                                          {cleanSentence}
+                                        </span>
+                                      </span>
+                                    )
+                                  })
+                                })()}
                               </div>
                             )}
                           </div>
@@ -1283,28 +1446,30 @@ export default function CenterPanel({
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div className="flex items-center gap-2">
                 <BookOpen size={16} className="text-indigo-500" />
-                <h2 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Văn bản gốc</h2>
+                <h2 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Bản dịch & Gốc</h2>
               </div>
               <div className="flex items-center gap-1.5">
-                <button
-                  onClick={async () => {
-                    if (isEditingOriginal) {
-                      setSaveState('saving')
-                      try {
-                        await saveChapter(projectId, activeFile, { source_text: original })
-                        setSaveState('saved')
-                      } catch (err) {
-                        console.error('Failed to save original text:', err)
-                        setSaveState('failed')
+                {activeTab === 'source' && (
+                  <button
+                    onClick={async () => {
+                      if (isEditingOriginal) {
+                        setSaveState('saving')
+                        try {
+                          await saveChapter(projectId, activeFile, { source_text: original })
+                          setSaveState('saved')
+                        } catch (err) {
+                          console.error('Failed to save original text:', err)
+                          setSaveState('failed')
+                        }
                       }
-                    }
-                    setIsEditingOriginal(!isEditingOriginal)
-                  }}
-                  className="p-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-500 hover:text-slate-700 transition-colors"
-                  title={isEditingOriginal ? "Hoàn thành chỉnh sửa" : "Sửa văn bản gốc"}
-                >
-                  {isEditingOriginal ? <Check size={14} /> : <Edit3 size={14} />}
-                </button>
+                      setIsEditingOriginal(!isEditingOriginal)
+                    }}
+                    className="p-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-500 hover:text-slate-700 transition-colors"
+                    title={isEditingOriginal ? "Hoàn thành chỉnh sửa" : "Sửa văn bản gốc"}
+                  >
+                    {isEditingOriginal ? <Check size={14} /> : <Edit3 size={14} />}
+                  </button>
+                )}
                 <button 
                   onClick={() => setShowSourcePanel(false)}
                   className="p-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-500 hover:text-slate-700 transition-colors"
@@ -1314,7 +1479,97 @@ export default function CenterPanel({
               </div>
             </div>
 
-            {isEditingOriginal ? (
+            {/* Tab selector */}
+            <div className="flex border-b border-slate-100 dark:border-slate-800 mb-4 select-none shrink-0">
+              <button
+                onClick={() => {
+                  setActiveTab('approved')
+                  setIsEditingOriginal(false)
+                }}
+                className={`flex-1 pb-2 text-[10px] font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
+                  activeTab === 'approved'
+                    ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                }`}
+              >
+                Bản dịch đã duyệt
+              </button>
+              <button
+                onClick={() => setActiveTab('source')}
+                className={`flex-1 pb-2 text-[10px] font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
+                  activeTab === 'source'
+                    ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-650 dark:hover:text-slate-300'
+                }`}
+              >
+                Văn bản gốc
+              </button>
+            </div>
+
+            {activeTab === 'approved' ? (
+              <div className="flex-1 overflow-y-auto space-y-3.5 pr-1.5 scrollbar-thin">
+                {segments.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">Chưa có phân đoạn nào được dịch hoặc duyệt.</p>
+                ) : (
+                  segments.map((seg, idx) => {
+                    const segKey = seg.segment_id || idx.toString()
+                    const targetSentences = splitSentences(seg.target_text)
+                    const sourceSentences = splitSentences(seg.source_text)
+                    
+                    return (
+                    <div
+                      key={segKey}
+                      className="p-3 rounded-lg border border-slate-100 dark:border-slate-900 bg-slate-50/20 dark:bg-slate-900/10 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-[10px] text-slate-455 dark:text-slate-400 font-bold uppercase tracking-wide mb-1">
+                        <span>Đoạn {idx + 1}</span>
+                        {seg.approved_at ? (
+                          <span className="text-emerald-500 bg-emerald-500/5 px-1.5 py-0.2 rounded font-medium normal-case">Đã duyệt</span>
+                        ) : (
+                          <span className="text-amber-500 bg-amber-500/5 px-1.5 py-0.2 rounded font-medium normal-case font-semibold">Bản nháp</span>
+                        )}
+                      </div>
+                      <div className="space-y-1 block">
+                        {!seg.target_text ? (
+                          <span className="italic text-slate-450 text-xs font-serif">[Chưa có bản dịch đã duyệt]</span>
+                        ) : (
+                          targetSentences.map((sentence: string, index: number) => {
+                            const sentenceKey = `${segKey}-${index}`
+                            const isExpanded = expandedSegments.has(sentenceKey)
+                            
+                            let sIdx = index
+                            let cleanSentence = sentence
+                            const match = sentence.match(/^\[s-(\d+)\]\s*(.*)/s)
+                            if (match) {
+                              sIdx = parseInt(match[1], 10)
+                              cleanSentence = match[2]
+                            } else {
+                              if (targetSentences.length > 0 && sourceSentences.length > 0 && targetSentences.length !== sourceSentences.length) {
+                                sIdx = Math.min(Math.floor(index * (sourceSentences.length / targetSentences.length)), sourceSentences.length - 1)
+                              }
+                            }
+                            const sourceText = sourceSentences[sIdx] || sourceSentences[sourceSentences.length - 1]
+                            
+                            return (
+                              <span key={sentenceKey} className="inline group cursor-pointer" onClick={() => toggleSegment(sentenceKey)}>
+                                {isExpanded && sourceText && (
+                                  <span className="block my-1 p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded border-l-2 border-indigo-400 text-indigo-900 dark:text-indigo-200 font-sans text-[12px] leading-relaxed whitespace-pre-wrap font-medium shadow-sm">
+                                    {sourceText}
+                                  </span>
+                                )}
+                                <span className="text-[13px] font-serif leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap hover:bg-indigo-500/10 dark:hover:bg-indigo-400/20 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors rounded">
+                                  {cleanSentence}
+                                </span>
+                              </span>
+                            )
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )})
+                )}
+              </div>
+            ) : isEditingOriginal ? (
               <textarea
                 value={original}
                 onChange={(e) => setOriginal(e.target.value)}

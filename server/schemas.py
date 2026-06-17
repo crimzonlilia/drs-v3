@@ -48,6 +48,7 @@ class TranslateResponse(BaseModel):
     editorial_score: Dict[str, float] = {}
     editorial_feedback: List[str] = []
     audit_report: str
+    model_name: Optional[str] = ""
 
 
 
@@ -134,6 +135,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    model_name: Optional[str] = ""
 
 
 class ChatHistoryUpsert(BaseModel):
@@ -156,6 +158,7 @@ class ChatHistoryUpsert(BaseModel):
     editorialFeedback: Optional[List[str]] = None
     proposals: Optional[List[Dict[str, Any]]] = None
     segments: Optional[List[Dict[str, Any]]] = None
+    model: Optional[str] = ""
 
 
 

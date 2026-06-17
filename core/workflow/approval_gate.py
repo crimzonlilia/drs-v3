@@ -61,6 +61,7 @@ class ApprovalSession:
         "render": "idle"
     })
     pipeline_error: str = ""
+    model_name: str = ""
 
     def is_complete(self) -> bool:
         return self.decision is not None
@@ -97,7 +98,8 @@ def session_from_dict(d: dict) -> ApprovalSession:
         editorial_feedback=d.get("editorial_feedback", []),
         memory_proposals=d.get("memory_proposals", []),
         pipeline_status=d.get("pipeline_status", default_status),
-        pipeline_error=d.get("pipeline_error", "")
+        pipeline_error=d.get("pipeline_error", ""),
+        model_name=d.get("model_name", "")
     )
 
 @dataclass
@@ -133,7 +135,8 @@ class ApprovalGate:
         validation_issues: List[Dict[str, Any]] = None,
         editorial_score: Dict[str, float] = None,
         editorial_feedback: List[str] = None,
-        memory_proposals: List[Dict[str, Any]] = None
+        memory_proposals: List[Dict[str, Any]] = None,
+        model_name: str = ""
     ) -> ApprovalSession:
         session_id = f"{self.memory.project_id}-{doc_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         session = ApprovalSession(
@@ -148,7 +151,8 @@ class ApprovalGate:
             validation_issues=validation_issues if validation_issues is not None else [],
             editorial_score=editorial_score if editorial_score is not None else {},
             editorial_feedback=editorial_feedback if editorial_feedback is not None else [],
-            memory_proposals=memory_proposals if memory_proposals is not None else []
+            memory_proposals=memory_proposals if memory_proposals is not None else [],
+            model_name=model_name
         )
         # Store in RAM cache
         SESSION_CACHE[session_id] = session
