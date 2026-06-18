@@ -418,31 +418,31 @@ async def run_image_translation_pipeline_task(
             all_source_texts = [s["source_text"] for s in segments if s.get("source_text", "").strip()]
             async with TranslationAgent(mem) as translation_agent:
                 session.model_name = translation_agent.generator.model
-                for idx, seg in enumerate(segments):
-                    source_txt = seg["source_text"]
-                    seg_id = seg["segment_id"]
-                    if not source_txt.strip():
-                        continue
-                        
-                    if idx > 0:
-                        import asyncio
-                        await asyncio.sleep(0.5)
-                        
-                    print(f"[IMAGE PIPELINE] Translating segment: {ascii(source_txt)}")
-                    gen_result = await translation_agent.translate(
-                        source_text=source_txt,
+                print(f"[IMAGE PIPELINE] Translating {len(segments)} segments in a single batch...")
+                
+                # Filter out empty segments to translate
+                segments_to_translate = [s for s in segments if s.get("source_text", "").strip()]
+                
+                if segments_to_translate:
+                    translations = await translation_agent.translate_batch(
+                        segments=segments_to_translate,
                         source_lang=source_lang,
                         target_lang=target_lang,
                         content_type="comic",
                         project_description=project_description,
-                        context_sentences=all_source_texts
                     )
-                    print(f"[IMAGE PIPELINE] Translated to: {ascii(gen_result.draft)}")
                     
-                    await execute_query(
-                        "UPDATE segments SET target_text = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
-                        [gen_result.draft, project_id, doc_id, seg_id]
-                    )
+                    db_updates = []
+                    for seg in segments_to_translate:
+                        seg_id = seg["segment_id"]
+                        target_txt = translations.get(seg_id, "")
+                        print(f"[IMAGE PIPELINE] Segment {seg_id} translated to: {ascii(target_txt)}")
+                        db_updates.append((
+                            "UPDATE segments SET target_text = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
+                            [target_txt, project_id, doc_id, seg_id]
+                        ))
+                    if db_updates:
+                        await execute_batch(db_updates)
                     
         session.pipeline_status["draft_translation"] = "success"
         session.pipeline_status["review"] = "success"

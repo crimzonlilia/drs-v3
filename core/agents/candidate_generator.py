@@ -80,6 +80,44 @@ Raw Translation Draft:
 {raw_translation}
 """
 
+BATCH_SYSTEM_TEMPLATE = """\
+You are a professional localization editor.
+Your job is to produce high-quality, natural-sounding translation drafts for a batch of text segments.
+For each segment, you will receive its `segment_id`, `source_text_segmented` (which contains inline sentence markers like [s-0]), and `raw_translation`.
+
+Rules:
+- Follow the glossary, style guide, and entity list exactly.
+- Sentence-level Markers: Inside each segment's translation, you must prepend a marker `[s-Y]` before each translated sentence, where Y is the 0-based index of the corresponding source sentence *within that segment*.
+- If you split a source sentence into multiple translated sentences, repeat the same marker (e.g. `[s-0] Sentence A. [s-0] Sentence B.`).
+- If you combine multiple source sentences, use the first source index (e.g. `[s-0] Combined sentence.`).
+- Preserve tone and register as specified.
+- Do NOT invent terms or names.
+- Output MUST be a valid JSON array of objects. Do NOT output any explanations, markdown code blocks (like ```json), or notes. Output only the raw JSON.
+
+Output JSON format:
+[
+  {{
+    "segment_id": "segment_id_value",
+    "target_text": "[s-0] Translated sentence 1. [s-1] Translated sentence 2."
+  }}
+]
+
+Source language: {source_lang}
+Target language: {target_lang}
+Content type: {content_type}
+
+Project Context:
+{project_context}
+
+{memory_context}
+"""
+
+BATCH_USER_TEMPLATE = """\
+Translate the following batch of segments:
+
+{segments_json}
+"""
+
 
 class CandidateGenerator:
     """
@@ -200,6 +238,90 @@ class CandidateGenerator:
             completion_tokens=usage.get("completion_tokens", 0),
             raw_response=data,
         )
+
+    async def generate_batch(
+        self,
+        segments: list[dict],
+        source_lang: str,
+        target_lang: str,
+        content_type: str = "general",
+        temperature: float | None = None,
+        project_description: str = "",
+    ) -> dict[str, str]:
+        if not segments:
+            return {}
+
+        # Step 1: Run Google Translate in parallel
+        async def get_raw_trans(seg):
+            source_txt = seg.get("source_text", "")
+            raw = await google_translate(source_txt, source_lang, target_lang)
+            source_sentences = split_sentences(source_txt)
+            segmented_source = "".join(f"[s-{idx}] {sentence}" for idx, sentence in enumerate(source_sentences))
+            return {
+                "segment_id": seg["segment_id"],
+                "source_text_segmented": segmented_source,
+                "raw_translation": raw
+            }
+
+        import asyncio
+        batch_inputs = await asyncio.gather(*[get_raw_trans(seg) for seg in segments])
+
+        # Step 2: Build LLM refinement prompt
+        memory_context = self.memory.build_prompt_context(source_lang, target_lang)
+
+        system_tmpl = load_prompt_template("candidate_generator_batch_system", content_type, BATCH_SYSTEM_TEMPLATE)
+        user_tmpl = load_prompt_template("candidate_generator_batch_user", content_type, BATCH_USER_TEMPLATE)
+
+        system_prompt = system_tmpl.format(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            content_type=content_type,
+            project_context=project_description or "(No specific project context)",
+            memory_context=memory_context or "(No approved memory yet for this project)",
+        )
+
+        user_prompt = user_tmpl.format(
+            segments_json=json.dumps(batch_inputs, ensure_ascii=False, indent=2)
+        )
+
+        payload = {
+            "model": self.model,
+            "max_tokens": cfg.gen_max_tokens * 2,
+            "temperature": temperature if temperature is not None else cfg.gen_temperature,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+
+        try:
+            data = await self._post_chat_completion_with_retry(payload)
+            content = data["choices"][0]["message"]["content"].strip()
+            
+            # Clean markdown code blocks if any
+            content_clean = re.sub(r"^```(?:json)?\s*", "", content, flags=re.IGNORECASE)
+            content_clean = re.sub(r"\s*```$", "", content_clean)
+            
+            ref_list = json.loads(content_clean)
+            result = {}
+            if isinstance(ref_list, list):
+                for item in ref_list:
+                    if isinstance(item, dict) and "segment_id" in item and "target_text" in item:
+                        result[item["segment_id"]] = item["target_text"]
+            
+            # Fallback for any missing segments
+            for seg in segments:
+                seg_id = seg["segment_id"]
+                if seg_id not in result:
+                    raw_t = next((b["raw_translation"] for b in batch_inputs if b["segment_id"] == seg_id), "")
+                    result[seg_id] = raw_t
+            return result
+        except Exception as e:
+            print(f"OpenRouter batch generation failed: {ascii(e)}")
+            result = {}
+            for b in batch_inputs:
+                result[b["segment_id"]] = f"[LỖI API OpenRouter: Dịch thô tạm thời. Mã lỗi: {str(e)}]\n{b['raw_translation']}"
+            return result
 
     async def revise(
         self,

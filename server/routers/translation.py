@@ -15,7 +15,7 @@ from core.agents import TranslationAgent, ConsistencyAuditor
 from server.schemas import TranslateRequest, TranslateResponse, ChatRequest, ChatResponse, ChatHistoryUpsert
 from server.auth import get_current_user
 from server.routers.projects import verify_project_member
-from core.utils.db import execute_query
+from core.utils.db import execute_query, execute_batch
 
 router = APIRouter(prefix="/api/translation", tags=["Translation"])
 
@@ -637,60 +637,54 @@ async def run_bulk_translation_pipeline_task(
     
     # Get segments
     segments = await execute_query(
-        "SELECT segment_id, source_text FROM segments WHERE project_id = ? AND doc_id = ? ORDER BY id ASC",
+        "SELECT segment_id, source_text, target_text, approved_at FROM segments WHERE project_id = ? AND doc_id = ? ORDER BY id ASC",
         [project_id, doc_id]
     )
     
     if not segments:
         return
         
-    print(f"[BULK PIPELINE] Starting background translation for {len(segments)} segments...")
+    # Filter untranslated segments
+    untranslated_segments = []
+    for seg in segments:
+        if not (seg.get("target_text") and seg.get("approved_at")):
+            if seg.get("source_text", "").strip():
+                untranslated_segments.append(seg)
+                
+    if not untranslated_segments:
+        print(f"[BULK PIPELINE] All segments are already translated for {doc_id}.")
+        return
+        
+    print(f"[BULK PIPELINE] Starting background translation for {len(untranslated_segments)} untranslated segments...")
     
+    batch_size = 15
     async with TranslationAgent(mem) as translation_agent:
-        context_window = []
-        for seg in segments:
-            seg_id = seg["segment_id"]
-            source_txt = seg["source_text"]
-            
-            # Check if it's already translated
-            check = await execute_query("SELECT target_text, approved_at FROM segments WHERE project_id = ? AND doc_id = ? AND segment_id = ?", [project_id, doc_id, seg_id])
-            if check and check[0].get("target_text") and check[0].get("approved_at"):
-                context_window.append(check[0].get("target_text"))
-                if len(context_window) > 5:
-                    context_window.pop(0)
-                continue
-                
-            if not source_txt.strip():
-                continue
-                
-            print(f"[BULK PIPELINE] Translating segment {seg_id}...")
+        for i in range(0, len(untranslated_segments), batch_size):
+            batch = untranslated_segments[i:i + batch_size]
+            print(f"[BULK PIPELINE] Translating batch {i // batch_size + 1} ({len(batch)} segments)...")
             try:
-                # Fast mode: only translation generator
-                gen_result = await translation_agent.translate(
-                    source_text=source_txt,
+                translations = await translation_agent.translate_batch(
+                    segments=batch,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     content_type="novel",
                     project_description=project_description,
-                    context_sentences=context_window
                 )
                 
-                target_text = gen_result.draft
+                db_updates = []
                 approved_at = datetime.utcnow().isoformat() + "Z"
-                
-                # Update DB directly as "approved"
-                await execute_query(
-                    "UPDATE segments SET target_text = ?, approved_at = ?, approved_by = 'system' WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
-                    [target_text, approved_at, project_id, doc_id, seg_id]
-                )
-                
-                # Slide window
-                context_window.append(source_txt)
-                if len(context_window) > 5:
-                    context_window.pop(0)
+                for seg in batch:
+                    seg_id = seg["segment_id"]
+                    target_text = translations.get(seg_id, "")
+                    db_updates.append((
+                        "UPDATE segments SET target_text = ?, approved_at = ?, approved_by = 'system' WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
+                        [target_text, approved_at, project_id, doc_id, seg_id]
+                    ))
+                if db_updates:
+                    await execute_batch(db_updates)
                     
             except Exception as e:
-                print(f"[BULK PIPELINE] Error translating segment {seg_id}: {e}")
+                print(f"[BULK PIPELINE] Error translating batch: {ascii(e)}")
                 
     print(f"[BULK PIPELINE] Finished background translation for {doc_id}.")
 

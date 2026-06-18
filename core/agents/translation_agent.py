@@ -38,6 +38,25 @@ class TranslationAgent:
             context_sentences=context_sentences,
         )
 
+    async def translate_batch(
+        self,
+        segments: List[Dict[str, Any]],
+        source_lang: str,
+        target_lang: str,
+        content_type: str = "general",
+        project_description: str = "",
+    ) -> Dict[str, str]:
+        """
+        Produce a batch of high-quality translation drafts.
+        """
+        return await self.generator.generate_batch(
+            segments=segments,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            content_type=content_type,
+            project_description=project_description,
+        )
+
     def load_project_memory(
         self,
         doc_id: str,
