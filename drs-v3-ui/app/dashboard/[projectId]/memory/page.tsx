@@ -15,6 +15,7 @@ import {
   Bookmark
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
+import { showToast } from '@/components/toast'
 import {
   getProjectMemory,
   addGlossaryTerm,
@@ -97,26 +98,35 @@ export default function ProjectMemoryPage({ params }: PageProps) {
   const handleAddGlossary = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!gSource.trim() || !gTarget.trim()) return
+    const newEntry: GlossaryEntry = {
+      source_term: gSource.trim(),
+      target_term: gTarget.trim(),
+      source_lang: projectInfo?.source_lang || 'ja',
+      target_lang: projectInfo?.target_lang || 'vi',
+      context_note: gNote.trim() || undefined
+    }
+    
+    // Optimistic Update
+    setGlossary(prev => [...prev, newEntry])
+    setGSource('')
+    setGTarget('')
+    setGNote('')
+    setShowAddGlossary(false)
+    
     try {
-      await addGlossaryTerm(projectId, {
-        source_term: gSource.trim(),
-        target_term: gTarget.trim(),
-        source_lang: projectInfo?.source_lang || 'ja',
-        target_lang: projectInfo?.target_lang || 'vi',
-        context_note: gNote.trim() || undefined
-      })
-      setGSource('')
-      setGTarget('')
-      setGNote('')
-      setShowAddGlossary(false)
+      await addGlossaryTerm(projectId, newEntry)
+      showToast('Đã thêm thuật ngữ thành công!', 'success')
       loadMemory()
     } catch (err) {
-      alert(`Error adding term: ${err}`)
+      showToast(`Không thể thêm thuật ngữ: ${err}`, 'error')
+      loadMemory()
     }
   }
 
   const handleDeleteGlossary = async (term: string) => {
     if (!confirm(`Delete glossary term "${term}"?`)) return
+    // Optimistic Update
+    setGlossary(prev => prev.filter(g => g.source_term !== term))
     try {
       await deleteGlossaryTerm(
         projectId,
@@ -124,9 +134,11 @@ export default function ProjectMemoryPage({ params }: PageProps) {
         projectInfo?.target_lang || 'vi',
         term
       )
+      showToast('Đã xóa thuật ngữ thành công!', 'success')
       loadMemory()
     } catch (err) {
-      alert(`Error deleting term: ${err}`)
+      showToast(`Không thể xóa thuật ngữ: ${err}`, 'error')
+      loadMemory()
     }
   }
 
@@ -134,36 +146,55 @@ export default function ProjectMemoryPage({ params }: PageProps) {
   const handleAddEntity = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!eId.trim() || !eCanonical.trim() || !eSource.trim()) return
+    const entityPayload = {
+      entity_id: eId.trim(),
+      canonical_name: eCanonical.trim(),
+      source_name: eSource.trim(),
+      entity_type: eType,
+      source_lang: projectInfo?.source_lang || 'ja',
+      target_lang: projectInfo?.target_lang || 'vi',
+      pronouns: ePronouns.trim() || undefined,
+      notes: eNotes.trim() || undefined
+    }
+    const newEnt: EntityEntry = {
+      entity_id: entityPayload.entity_id,
+      canonical_name: entityPayload.canonical_name,
+      source_name: entityPayload.source_name,
+      entity_type: entityPayload.entity_type,
+      pronouns: entityPayload.pronouns,
+      notes: entityPayload.notes
+    }
+    
+    // Optimistic Update
+    setEntities(prev => [...prev, newEnt])
+    setEId('')
+    setECanonical('')
+    setESource('')
+    setEPronouns('')
+    setENotes('')
+    setShowAddEntity(false)
+    
     try {
-      await addEntity(projectId, {
-        entity_id: eId.trim(),
-        canonical_name: eCanonical.trim(),
-        source_name: eSource.trim(),
-        entity_type: eType,
-        source_lang: projectInfo?.source_lang || 'ja',
-        target_lang: projectInfo?.target_lang || 'vi',
-        pronouns: ePronouns.trim() || undefined,
-        notes: eNotes.trim() || undefined
-      })
-      setEId('')
-      setECanonical('')
-      setESource('')
-      setEPronouns('')
-      setENotes('')
-      setShowAddEntity(false)
+      await addEntity(projectId, entityPayload)
+      showToast('Đã thêm thực thể thành công!', 'success')
       loadMemory()
     } catch (err) {
-      alert(`Error adding entity: ${err}`)
+      showToast(`Không thể thêm thực thể: ${err}`, 'error')
+      loadMemory()
     }
   }
 
   const handleDeleteEntity = async (entityId: string) => {
     if (!confirm(`Delete entity "${entityId}"?`)) return
+    // Optimistic Update
+    setEntities(prev => prev.filter(e => e.entity_id !== entityId))
     try {
       await deleteEntity(projectId, entityId)
+      showToast('Đã xóa thực thể thành công!', 'success')
       loadMemory()
     } catch (err) {
-      alert(`Error deleting entity: ${err}`)
+      showToast(`Không thể xóa thực thể: ${err}`, 'error')
+      loadMemory()
     }
   }
 
@@ -171,35 +202,53 @@ export default function ProjectMemoryPage({ params }: PageProps) {
   const handleAddRule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!rId.trim() || !rCategory.trim() || !rDesc.trim()) return
+    const rulePayload = {
+      rule_id: rId.trim(),
+      category: rCategory.trim(),
+      description: rDesc.trim(),
+      example_before: rBefore.trim() || undefined,
+      example_after: rAfter.trim() || undefined,
+      source_lang: projectInfo?.source_lang || 'ja',
+      target_lang: projectInfo?.target_lang || 'vi'
+    }
+    const newR: StyleRuleEntry = {
+      rule_id: rulePayload.rule_id,
+      category: rulePayload.category,
+      description: rulePayload.description,
+      example_before: rulePayload.example_before,
+      example_after: rulePayload.example_after
+    }
+    
+    // Optimistic Update
+    setStyleRules(prev => [...prev, newR])
+    setRId('')
+    setRCategory('')
+    setRDesc('')
+    setRBefore('')
+    setRAfter('')
+    setShowAddRule(false)
+    
     try {
-      await addStyleRule(projectId, {
-        rule_id: rId.trim(),
-        category: rCategory.trim(),
-        description: rDesc.trim(),
-        example_before: rBefore.trim() || undefined,
-        example_after: rAfter.trim() || undefined,
-        source_lang: projectInfo?.source_lang || 'ja',
-        target_lang: projectInfo?.target_lang || 'vi'
-      })
-      setRId('')
-      setRCategory('')
-      setRDesc('')
-      setRBefore('')
-      setRAfter('')
-      setShowAddRule(false)
+      await addStyleRule(projectId, rulePayload)
+      showToast('Đã thêm quy tắc văn phong thành công!', 'success')
       loadMemory()
     } catch (err) {
-      alert(`Error adding style rule: ${err}`)
+      showToast(`Không thể thêm quy tắc: ${err}`, 'error')
+      loadMemory()
     }
   }
 
   const handleDeleteRule = async (ruleId: string) => {
     if (!confirm(`Delete style rule "${ruleId}"?`)) return
+    // Optimistic Update
+    setStyleRules(prev => prev.filter(r => r.rule_id !== ruleId))
     try {
       await deleteStyleRule(projectId, ruleId)
+      showToast('Đã xóa quy tắc thành công!', 'success')
       loadMemory()
     } catch (err) {
-      alert(`Error deleting style rule: ${err}`)
+      showToast(`Không thể xóa quy tắc: ${err}`, 'error')
+      loadMemory()
     }
   }
 

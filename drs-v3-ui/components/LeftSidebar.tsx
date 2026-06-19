@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { showToast } from './toast'
 import { FileText, PanelLeft, Plus, Trash2, UploadCloud } from 'lucide-react'
 import { listChapters, deleteChapter, saveChapter, uploadTextBulk } from '@/app/api-client'
 
@@ -45,20 +46,22 @@ export default function LeftSidebar({
     if (!confirm(`Bạn có chắc chắn muốn xóa tài liệu "${filename}" không? Thao tác này sẽ xóa vĩnh viễn dữ liệu trên hệ thống.`)) {
       return
     }
+    const newList = fileList.filter(f => f !== filename)
+    setFileList(newList)
+    if (activeFile === filename) {
+      if (newList.length > 0) {
+        onFileSelect(newList[0])
+      } else {
+        onFileSelect('')
+      }
+    }
     try {
       await deleteChapter(projectId, filename)
-      const newList = fileList.filter(f => f !== filename)
-      setFileList(newList)
-      if (activeFile === filename) {
-        if (newList.length > 0) {
-          onFileSelect(newList[0])
-        } else {
-          onFileSelect('')
-        }
-      }
-      alert(`Đã xóa tài liệu "${filename}" thành công.`)
+      showToast(`Đã xóa tài liệu "${filename}" thành công.`, 'success')
     } catch (err: any) {
-      alert(`Lỗi khi xóa tài liệu: ${err.message}`)
+      showToast(`Lỗi khi xóa tài liệu: ${err.message}`, 'error')
+      const chapters = await listChapters(projectId)
+      setFileList(chapters?.length ? chapters : defaultFiles)
     }
   }
 
@@ -67,15 +70,21 @@ export default function LeftSidebar({
     if (!filename?.trim()) return
     const cleanName = filename.endsWith('.md') ? filename : `${filename}.md`
     if (fileList.some(f => f.toLowerCase() === cleanName.toLowerCase())) {
-      alert('A document with that name already exists.')
+      showToast('Tài liệu với tên đó đã tồn tại.', 'warning')
       return
     }
+    
+    // Optimistic update
+    setFileList([...fileList, cleanName])
+    onFileSelect(cleanName)
+    
     try {
       await saveChapter(projectId, cleanName, { draft: '' })
-      setFileList([...fileList, cleanName])
-      onFileSelect(cleanName)
+      showToast('Đã tạo tài liệu mới thành công.', 'success')
     } catch (err: any) {
-      alert(`Lỗi khi tạo tài liệu mới: ${err.message}`)
+      showToast(`Lỗi khi tạo tài liệu mới: ${err.message}`, 'error')
+      const chapters = await listChapters(projectId)
+      setFileList(chapters?.length ? chapters : defaultFiles)
     }
   }
 
@@ -89,20 +98,23 @@ export default function LeftSidebar({
     if (!cleanName.endsWith('.md')) cleanName += '.md'
     
     if (fileList.some(f => f.toLowerCase() === cleanName.toLowerCase())) {
-      alert('Tài liệu đã tồn tại.')
+      showToast('Tài liệu đã tồn tại.', 'warning')
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
     
+    // Optimistic update
+    setFileList([...fileList, cleanName])
+    onFileSelect(cleanName)
+    
     try {
       await saveChapter(projectId, cleanName, { draft: '' })
       await uploadTextBulk(projectId, cleanName, 'ja', 'vi', file)
-      
-      setFileList([...fileList, cleanName])
-      onFileSelect(cleanName)
-      alert(`Đã nạp file thành công! Hệ thống đang dịch ngầm tự động. Các đoạn dịch xong sẽ dần xuất hiện ở tab "Bản dịch đã duyệt".`)
+      showToast('Đã nạp file thành công! Hệ thống đang dịch ngầm tự động. Các đoạn dịch xong sẽ dần xuất hiện ở tab "Bản dịch đã duyệt".', 'success', 6000)
     } catch (err: any) {
-      alert(`Lỗi khi tải file: ${err.message}`)
+      showToast(`Lỗi khi tải file: ${err.message}`, 'error')
+      const chapters = await listChapters(projectId)
+      setFileList(chapters?.length ? chapters : defaultFiles)
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = ''
     }

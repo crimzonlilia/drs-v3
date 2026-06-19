@@ -1,0 +1,28 @@
+{
+  "session_id": "demo_project-doc_test_export-20260618025053",
+  "project_id": "demo_project",
+  "doc_id": "doc_test_export",
+  "source_text": "Image Translation: HK7N-hSawAAS_xY.jpg",
+  "current_draft": "",
+  "audit_report": "",
+  "source_lang": "ja",
+  "target_lang": "vi",
+  "decision": null,
+  "final_text": "",
+  "decided_at": "",
+  "validation_issues": [],
+  "editorial_score": {},
+  "editorial_feedback": [],
+  "memory_proposals": [],
+  "pipeline_status": {
+    "upload": "success",
+    "ocr": "success",
+    "context_retrieval": "success",
+    "draft_translation": "success",
+    "review": "success",
+    "approve": "idle",
+    "render": "success"
+  },
+  "pipeline_error": "",
+  "model_name": "openrouter/owl-alpha"
+}

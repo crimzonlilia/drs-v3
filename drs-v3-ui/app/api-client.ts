@@ -567,7 +567,7 @@ export async function sendGeneralChat(
   message: string,
   messageId?: string,
   history?: { role: string; content: string }[]
-): Promise<{ reply: string }> {
+): Promise<{ reply: string; model_name?: string }> {
   return await apiFetch(`/api/translation/chat`, {
     method: 'POST',
     body: JSON.stringify({

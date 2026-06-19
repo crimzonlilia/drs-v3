@@ -4,8 +4,9 @@ openrouter:
   title: "DRS v3"
 
 models:
-  generator: "openrouter/owl-alpha"
-  reviewer: "openrouter/owl-alpha"
+  generator: "qwen/qwen3.5-flash-02-23"
+  reviewer: "meta-llama/llama-3.2-3b-instruct:free"
+  ocr: "qwen/qwen3.5-flash-02-23"
 
 generation:
   max_tokens: 2048

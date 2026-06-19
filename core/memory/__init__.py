@@ -87,6 +87,17 @@ class ProjectMemory:
         })
         self.save_style_corrections(corrections)
 
+    def is_empty(self) -> bool:
+        """
+        Returns True if the memory has no glossary terms, entities, tone notes, or style rules.
+        """
+        has_glossary = len(self.glossary) > 0
+        has_entities = len(self.entities) > 0
+        has_style = False
+        if self.style.profile:
+            has_style = len(self.style.profile.rules) > 0 or bool(self.style.profile.tone_note.strip())
+        return not (has_glossary or has_entities or has_style)
+
     def build_prompt_context(self, source_lang: str, target_lang: str) -> str:
         """
         Assemble all approved memory into one context block for LLM injection.

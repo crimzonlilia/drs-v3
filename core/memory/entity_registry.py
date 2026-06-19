@@ -100,7 +100,6 @@ class EntityRegistry:
                 continue
             if e.source_name == source_name or source_name in e.aliases:
                 e.mention_count += 1
-                self.save()
                 return e
         return None
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { login, register } from '@/app/api-client'
+import { showToast } from '@/components/toast'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -32,7 +33,7 @@ export default function LoginPage() {
         router.push('/dashboard')
       } else {
         await register(username, password, email || undefined)
-        alert('Đăng ký thành công! Hãy đăng nhập.')
+        showToast('Đăng ký thành công! Hãy đăng nhập.', 'success')
         setIsLogin(true)
         setEmail('')
         setPassword('')

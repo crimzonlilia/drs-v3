@@ -33,16 +33,21 @@ def is_cloud_mode() -> bool:
         and CF_R2_BUCKET
     )
 
+_S3_CLIENT = None
+
 def _get_s3_client():
-    endpoint_url = f"https://{CF_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-    return boto3.client(
-        "s3",
-        endpoint_url=endpoint_url,
-        aws_access_key_id=CF_R2_ACCESS_KEY_ID,
-        aws_secret_access_key=CF_R2_SECRET_ACCESS_KEY,
-        config=Config(signature_version="s3v4"),
-        region_name="auto"
-    )
+    global _S3_CLIENT
+    if _S3_CLIENT is None:
+        endpoint_url = f"https://{CF_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        _S3_CLIENT = boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=CF_R2_ACCESS_KEY_ID,
+            aws_secret_access_key=CF_R2_SECRET_ACCESS_KEY,
+            config=Config(signature_version="s3v4"),
+            region_name="auto"
+        )
+    return _S3_CLIENT
 
 # ------------------------------------------------------------------ #
 # D1 Database Fallback for file storage                              #
@@ -107,36 +112,57 @@ def _run_db_query_sync(sql: str, params: list = None) -> list:
 # Core Storage Interface                                               #
 # ------------------------------------------------------------------ #
 
+_MEMORY_CACHE = {}  # key -> (content, timestamp)
+
 def read_text(key: str) -> Optional[str]:
     key = key.lstrip("/")
     
+    is_memory_file = "/memory/" in key
+    if is_memory_file:
+        import time
+        now = time.time()
+        if key in _MEMORY_CACHE:
+            cached_content, timestamp = _MEMORY_CACHE[key]
+            if now - timestamp < 5.0:  # 5 seconds TTL
+                return cached_content
+
+    content = None
     if is_cloud_mode():
         try:
             s3 = _get_s3_client()
             response = s3.get_object(Bucket=CF_R2_BUCKET, Key=key)
-            return response["Body"].read().decode("utf-8")
-        except Exception:
-            return None
-            
-    # Try D1 database fallback first
-    try:
-        rows = _run_db_query_sync("SELECT content_text FROM r2_emulated_files WHERE key = ?", [key])
-        if rows and rows[0]["content_text"] is not None:
-            return rows[0]["content_text"]
-    except Exception:
-        pass
-        
-    # Local filesystem fallback
-    file_path = LOCAL_R2_ROOT / key
-    if file_path.exists():
-        try:
-            return file_path.read_text(encoding="utf-8")
+            content = response["Body"].read().decode("utf-8")
         except Exception:
             pass
-    return None
+            
+    if content is None:
+        # Try D1 database fallback first
+        try:
+            rows = _run_db_query_sync("SELECT content_text FROM r2_emulated_files WHERE key = ?", [key])
+            if rows and rows[0]["content_text"] is not None:
+                content = rows[0]["content_text"]
+        except Exception:
+            pass
+        
+    if content is None:
+        # Local filesystem fallback
+        file_path = LOCAL_R2_ROOT / key
+        if file_path.exists():
+            try:
+                content = file_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+
+    if is_memory_file and content is not None:
+        import time
+        _MEMORY_CACHE[key] = (content, time.time())
+        
+    return content
 
 def write_text(key: str, text: str) -> None:
     key = key.lstrip("/")
+    if "/memory/" in key:
+        _MEMORY_CACHE.pop(key, None)
     
     if is_cloud_mode():
         s3 = _get_s3_client()
@@ -221,7 +247,9 @@ def write_binary(key: str, data: bytes, mime_type: str = "application/octet-stre
 
 def delete_file(key: str) -> bool:
     key = key.lstrip("/")
-    
+    if "/memory/" in key:
+        _MEMORY_CACHE.pop(key, None)
+        
     if is_cloud_mode():
         try:
             s3 = _get_s3_client()

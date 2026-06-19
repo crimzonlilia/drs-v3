@@ -1,0 +1,96 @@
+=== Test: Real Manga Image Multimodal Translation ===
+Reading image from R2: projects/demo_project/docs/doc_test_export/assets/HK7N-hSawAAS_xY.jpg...
+Successfully retrieved image. Bytes size: 419075
+Saved image locally to: C:\Users\minh\AppData\Local\Temp\tmp2e66t3e5.jpg
+Running joint Multimodal OCR & Translation with model: qwen/qwen3.5-flash-02-23...
+[MULTIMODAL OCR] Successfully parsed 17 text blocks with translations.
+
+Multimodal OCR & Translation completed in 102.49 seconds.
+Found 17 translated blocks:
+
+Block 1:
+  Source: 'リチャードで万バズしたのにリチャードこない'
+  Translation: 'Đã dùng Richard để gây bão mà Richard lại không xuất hiện'
+  Bounding Box: [0.88, 0.02, 0.1, 0.19]
+
+Block 2:
+  Source: 'ウママ…苦しいつらい'
+  Translation: 'U-ma… Khổ sở, thống khổ'
+  Bounding Box: [0.58, 0.02, 0.1, 0.19]
+
+Block 3:
+  Source: '小さいしなんか描いたことあるなぁ'
+  Translation: 'Nó nhỏ con, hình như ta đã từng vẽ nó rồi nhỉ'
+  Bounding Box: [0.02, 0.08, 0.08, 0.15]
+
+Block 4:
+  Source: 'うるさいな余の影法師で我慢しろ'
+  Translation: 'Im lặng đi, dùng bóng ma của ta mà chịu đựng đi'
+  Bounding Box: [0.45, 0.02, 0.1, 0.19]
+
+Block 5:
+  Source: 'ちなみに本物と同じモーションで代わりに攻撃する'
+  Translation: 'Nhân tiện, nó sẽ tấn công thay thế với chuyển động giống hệt bản gốc'
+  Bounding Box: [0.88, 0.3, 0.1, 0.15]
+
+Block 6:
+  Source: 'どうみても四つん這いだけど？'
+  Translation: 'Dù nhìn thế nào thì cũng là tư thế bò bốn chân mà?'
+  Bounding Box: [0.5, 0.3, 0.1, 0.15]
+
+Block 7:
+  Source: 'アーウ!!'
+  Translation: 'Gâu!!'
+  Bounding Box: [0.65, 0.3, 0.08, 0.05]
+
+Block 8:
+  Source: 'まあ影法師だから本物みたいに喋らないが'
+  Translation: 'Thôi thì là bóng ma nên nó không nói chuyện như bản gốc đâu'
+  Bounding Box: [0.38, 0.3, 0.1, 0.15]
+
+Block 9:
+  Source: 'チョアヨ～♪'
+  Translation: 'Chào bạn~♪'
+  Bounding Box: [0.15, 0.3, 0.08, 0.05]
+
+Block 10:
+  Source: '韓国語じゃねえか'
+  Translation: 'Chẳng phải là tiếng Hàn à?'
+  Bounding Box: [0.02, 0.3, 0.08, 0.15]
+
+Block 11:
+  Source: 'チョアヨ'
+  Translation: 'Chào bạn'
+  Bounding Box: [0.1, 0.38, 0.05, 0.08]
+
+Block 12:
+  Source: '俺は影法師すら満足に扱えないんだ…笑えよ'
+  Translation: 'Ta ngay cả bóng ma cũng không thể điều khiển thỏa đáng… Cười đi chứ'
+  Bounding Box: [0.85, 0.52, 0.12, 0.15]
+
+Block 13:
+  Source: 'ちょっとジョン待ってねえ待ってあれスピキじゃん？！'
+  Translation: 'Này Jon đợi đã, đợi đã, kia chẳng phải Spiky à?!'
+  Bounding Box: [0.55, 0.52, 0.15, 0.15]
+
+Block 14:
+  Source: 'ほら本人もスピキって言ってるし'
+  Translation: 'Nhìn đi, bản thân nó cũng nói là Spiky mà'
+  Bounding Box: [0.5, 0.58, 0.12, 0.1]
+
+Block 15:
+  Source: 'ウアア！スピキデルジバセヨ！.wav'
+  Translation: 'Gâu! Spiki, Deljibaseyo! .wav'
+  Bounding Box: [0.1, 0.55, 0.15, 0.12]
+
+Block 16:
+  Source: 'ねぇってばジョン？！！'
+  Translation: 'Đã bảo rồi mà, Jon?!!'
+  Bounding Box: [0.02, 0.8, 0.1, 0.15]
+
+Block 17:
+  Source: 'スピキリチャードに戦わせてるの？！'
+  Translation: 'Ngươi định cho Spiky và Richard đánh nhau à?!'
+  Bounding Box: [0.2, 0.8, 0.1, 0.12]
+
+=== Real Image Test Completed ===

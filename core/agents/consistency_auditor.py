@@ -52,14 +52,23 @@ class ConsistencyAuditor:
         )
 
         # 2. Run LLM review pass
-        review_result = await self.reviewer.review(
-            source_text=source_text,
-            draft=current_draft,
-            check_report=check_report,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            content_type=content_type
-        )
+        if self.memory.is_empty():
+            print("[ConsistencyAuditor] Project memory is empty. Skipping LLM review pass.")
+            from core.agents.reviewer import ReviewResult
+            review_result = ReviewResult(
+                revised_draft=current_draft,
+                review_note="No project memory established yet. LLM consistency audit skipped.",
+                model="skipped"
+            )
+        else:
+            review_result = await self.reviewer.review(
+                source_text=source_text,
+                draft=current_draft,
+                check_report=check_report,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                content_type=content_type
+            )
 
         # 3. Format validation issues and metrics
         validation_issues = self._format_validation_issues(check_report, current_draft)

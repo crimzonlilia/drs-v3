@@ -342,10 +342,18 @@ async def run_image_translation_pipeline_task(
         print(f"[IMAGE PIPELINE] Error: Session {session_id} not found in SESSION_CACHE.")
         return
         
+
+        
     try:
-        # 1. OCR Stage
-        print(f"[IMAGE PIPELINE] Starting OCR stage for asset: {asset_id}")
+        # Load project memory first
+        print(f"[IMAGE PIPELINE] Loading project memory context for project: {project_id}")
+        mem = ProjectMemory(project_id)
+        project_memory_context = mem.build_prompt_context(source_lang, target_lang)
+
+        # 1. OCR & Direct Translation Stage
+        print(f"[IMAGE PIPELINE] Starting Multimodal OCR & Direct Translation stage for asset: {asset_id}")
         session.pipeline_status["ocr"] = "running"
+        session.pipeline_status["context_retrieval"] = "running"
         
         r2_path = f"projects/{project_id}/docs/{doc_id}/assets/{asset_id}"
         image_bytes = read_binary(r2_path)
@@ -357,16 +365,23 @@ async def run_image_translation_pipeline_task(
             temp_file_path = temp_file.name
             
         try:
-            provider = OCRRouter.get_provider(source_lang)
-            print(f"[IMAGE PIPELINE] Using OCR provider: {provider.__class__.__name__}")
-            blocks = await provider.extract(temp_file_path)
-            print(f"[IMAGE PIPELINE] OCR extracted {len(blocks)} text blocks.")
+            from core.ocr.multimodal_ocr import MultimodalOCRTranslator
+            translator = MultimodalOCRTranslator()
+            session.model_name = translator.model
+            
+            blocks = await translator.extract_and_translate(
+                image_path=temp_file_path,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                project_memory_context=project_memory_context
+            )
+            print(f"[IMAGE PIPELINE] Multimodal engine extracted and translated {len(blocks)} text blocks.")
             
             ocr_data = {
-                "provider": provider.__class__.__name__.replace("Provider", "").lower(),
+                "provider": "multimodal_llm",
                 "provider_version": "1.0.0",
                 "generated_at": datetime.utcnow().isoformat() + "Z",
-                "blocks": [{"text": b.text, "bbox": b.bbox, "confidence": b.confidence} for b in blocks]
+                "blocks": [{"text": b["source_text"], "bbox": b["bbox"], "confidence": 0.99} for b in blocks]
             }
             extracted_key = f"projects/{project_id}/docs/{doc_id}/extracted/{asset_id}.json"
             write_text(extracted_key, json.dumps(ocr_data, indent=2, ensure_ascii=False))
@@ -375,16 +390,17 @@ async def run_image_translation_pipeline_task(
                 ("DELETE FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?", [project_id, doc_id, asset_id])
             ]
             for block in blocks:
-                coord_str = "".join(f"{round(c, 3):.3f}" for c in block.bbox)
+                coord_str = "".join(f"{round(c, 3):.3f}" for c in block["bbox"])
                 h = hashlib.sha1(coord_str.encode('utf-8')).hexdigest()[:6]
                 segment_id = f"{asset_id.split('.')[0]}_{h}"
+                approved_at = datetime.utcnow().isoformat() + "Z"
                 db_statements.append((
                     """
                     INSERT INTO segments (
-                        project_id, doc_id, segment_id, segment_type, source_text, target_text, asset_id, bbox
-                    ) VALUES (?, ?, ?, 'bubble', ?, '', ?, ?)
+                        project_id, doc_id, segment_id, segment_type, source_text, target_text, asset_id, bbox, approved_by, approved_at
+                    ) VALUES (?, ?, ?, 'bubble', ?, ?, ?, ?, 'system', ?)
                     """,
-                    [project_id, doc_id, segment_id, block.text, asset_id, json.dumps(block.bbox)]
+                    [project_id, doc_id, segment_id, block["source_text"], block["target_text"], asset_id, json.dumps(block["bbox"]), approved_at]
                 ))
             await execute_batch(db_statements)
             print(f"[IMAGE PIPELINE] Saved {len(blocks)} segments to SQLite/D1.")
@@ -393,57 +409,7 @@ async def run_image_translation_pipeline_task(
                 os.unlink(temp_file_path)
                 
         session.pipeline_status["ocr"] = "success"
-        session.pipeline_status["context_retrieval"] = "running"
-        
-        # 2. Context Retrieval Stage
-        print(f"[IMAGE PIPELINE] Loading project memory context for project: {project_id}")
-        mem = ProjectMemory(project_id)
         session.pipeline_status["context_retrieval"] = "success"
-        session.pipeline_status["draft_translation"] = "running"
-        
-        # 3. Draft Translation Stage
-        print(f"[IMAGE PIPELINE] Starting draft translation stage.")
-        segments = await execute_query(
-            "SELECT segment_id, source_text FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?",
-            [project_id, doc_id, asset_id]
-        )
-        
-        project_rows = await execute_query("SELECT description FROM projects WHERE id = ?", [project_id])
-        project_description = project_rows[0].get("description", "") if project_rows else ""
-        
-        if not segments:
-            print(f"[IMAGE PIPELINE] No text segments to translate for asset {asset_id}.")
-        else:
-            print(f"[IMAGE PIPELINE] Found {len(segments)} segments to translate.")
-            all_source_texts = [s["source_text"] for s in segments if s.get("source_text", "").strip()]
-            async with TranslationAgent(mem) as translation_agent:
-                session.model_name = translation_agent.generator.model
-                print(f"[IMAGE PIPELINE] Translating {len(segments)} segments in a single batch...")
-                
-                # Filter out empty segments to translate
-                segments_to_translate = [s for s in segments if s.get("source_text", "").strip()]
-                
-                if segments_to_translate:
-                    translations = await translation_agent.translate_batch(
-                        segments=segments_to_translate,
-                        source_lang=source_lang,
-                        target_lang=target_lang,
-                        content_type="comic",
-                        project_description=project_description,
-                    )
-                    
-                    db_updates = []
-                    for seg in segments_to_translate:
-                        seg_id = seg["segment_id"]
-                        target_txt = translations.get(seg_id, "")
-                        print(f"[IMAGE PIPELINE] Segment {seg_id} translated to: {ascii(target_txt)}")
-                        db_updates.append((
-                            "UPDATE segments SET target_text = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
-                            [target_txt, project_id, doc_id, seg_id]
-                        ))
-                    if db_updates:
-                        await execute_batch(db_updates)
-                    
         session.pipeline_status["draft_translation"] = "success"
         session.pipeline_status["review"] = "success"
         
@@ -489,6 +455,58 @@ async def run_image_translation_pipeline_task(
             gate.save_translation_draft(session)
         except Exception as e:
             print(f"[IMAGE PIPELINE] Error saving draft: {ascii(e)}")
+            
+        # Update chat history message if it exists
+        try:
+            chat_rows = await execute_query(
+                "SELECT id FROM chat_history WHERE session_id = ?",
+                [session_id]
+            )
+            if chat_rows:
+                msg_id = chat_rows[0]["id"]
+                if session.pipeline_error:
+                    status = "failed"
+                    text = f"Dịch hình ảnh thất bại: {session.pipeline_error}"
+                    segments_json = "[]"
+                else:
+                    if session.pipeline_status.get("review") == "success":
+                        status = "done"
+                        text = f"Dịch hình ảnh {asset_id} hoàn tất."
+                        
+                        # Fetch segments
+                        rendered_segments = await execute_query(
+                            "SELECT segment_id, source_text, target_text, bbox, asset_id, approved_by, approved_at FROM segments WHERE project_id = ? AND doc_id = ? AND asset_id = ?",
+                            [project_id, doc_id, asset_id]
+                        )
+                        segs_list = []
+                        for r in rendered_segments:
+                            segs_list.append({
+                                "segment_id": r["segment_id"],
+                                "source_text": r["source_text"],
+                                "target_text": r["target_text"] or "",
+                                "bbox": json.loads(r["bbox"]) if r["bbox"] else [],
+                                "asset_id": r["asset_id"] or "",
+                                "approved_by": r["approved_by"],
+                                "approved_at": r["approved_at"]
+                            })
+                        segments_json = json.dumps(segs_list, ensure_ascii=False)
+                    else:
+                        status = "processing"
+                        text = "Đang trích xuất văn bản từ hình ảnh (OCR)..."
+                        segments_json = "[]"
+                        
+                await execute_query(
+                    """
+                    UPDATE chat_history 
+                    SET status = ?, text = ?, segments_json = ?, model = ?
+                    WHERE id = ?
+                    """,
+                    [status, text, segments_json, session.model_name or "", msg_id]
+                )
+                print(f"[IMAGE PIPELINE] Updated chat history message {msg_id} to status: {status}")
+        except Exception as chat_err:
+            print(f"[IMAGE PIPELINE] Error updating chat history: {ascii(chat_err)}")
+
 
 
 @router.post("/{doc_id}/translate-image")

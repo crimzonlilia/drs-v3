@@ -1,5 +1,3 @@
-models:
-  generator: "openrouter/owl-alpha"
 
 generation:
   temperature: 0.5

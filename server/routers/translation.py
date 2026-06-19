@@ -130,22 +130,34 @@ async def run_translation(request: TranslateRequest, current_user: dict = Depend
             )
             
             # 3. Audit (Consistency QA & Editorial QA)
-            audit_result = await consistency_auditor.audit(
-                source_text=request.source_text,
-                current_draft=gen_result.draft,
-                source_lang=request.source_lang,
-                target_lang=request.target_lang,
-                content_type=request.content_type
-            )
-            
-            # 4. Populate memory proposals from audit report / checks
-            check_report = consistency_auditor.check_suite.run(
-                source_text=request.source_text,
-                draft_text=gen_result.draft,
-                source_lang=request.source_lang,
-                target_lang=request.target_lang,
-                content_type=request.content_type
-            )
+            if mem.is_empty():
+                from core.agents.consistency_auditor import AuditResult
+                from core.checks import CheckReport
+                
+                audit_result = AuditResult(
+                    validation_issues=[],
+                    editorial_score={"accuracy": 1.0, "consistency": 1.0, "fluency": 1.0},
+                    editorial_feedback=["Bỏ qua kiểm duyệt do bộ nhớ dự án trống."],
+                    audit_report="No project memory established yet. LLM consistency audit skipped."
+                )
+                check_report = CheckReport(term_flags=[], entity_flags=[], style_flags=[])
+            else:
+                audit_result = await consistency_auditor.audit(
+                    source_text=request.source_text,
+                    current_draft=gen_result.draft,
+                    source_lang=request.source_lang,
+                    target_lang=request.target_lang,
+                    content_type=request.content_type
+                )
+                
+                # 4. Populate memory proposals from audit report / checks
+                check_report = consistency_auditor.check_suite.run(
+                    source_text=request.source_text,
+                    draft_text=gen_result.draft,
+                    source_lang=request.source_lang,
+                    target_lang=request.target_lang,
+                    content_type=request.content_type
+                )
             
             memory_proposals = []
             for f in check_report.term_flags:
@@ -658,10 +670,13 @@ async def run_bulk_translation_pipeline_task(
     print(f"[BULK PIPELINE] Starting background translation for {len(untranslated_segments)} untranslated segments...")
     
     batch_size = 15
-    async with TranslationAgent(mem) as translation_agent:
-        for i in range(0, len(untranslated_segments), batch_size):
-            batch = untranslated_segments[i:i + batch_size]
-            print(f"[BULK PIPELINE] Translating batch {i // batch_size + 1} ({len(batch)} segments)...")
+    batches = [untranslated_segments[i:i + batch_size] for i in range(0, len(untranslated_segments), batch_size)]
+    
+    sem = asyncio.Semaphore(3)
+    
+    async def process_batch(batch, batch_index):
+        async with sem:
+            print(f"[BULK PIPELINE] Translating batch {batch_index + 1} ({len(batch)} segments) concurrently...")
             try:
                 translations = await translation_agent.translate_batch(
                     segments=batch,
@@ -682,9 +697,12 @@ async def run_bulk_translation_pipeline_task(
                     ))
                 if db_updates:
                     await execute_batch(db_updates)
-                    
             except Exception as e:
-                print(f"[BULK PIPELINE] Error translating batch: {ascii(e)}")
+                print(f"[BULK PIPELINE] Error translating batch {batch_index + 1}: {ascii(e)}")
+
+    async with TranslationAgent(mem) as translation_agent:
+        tasks = [process_batch(b, idx) for idx, b in enumerate(batches)]
+        await asyncio.gather(*tasks)
                 
     print(f"[BULK PIPELINE] Finished background translation for {doc_id}.")
 

@@ -93,28 +93,35 @@ class Pipeline:
 
         # Step 2 & 3: Consistency checks & AI Review pass via ConsistencyAuditor
         print("[2/4] and [3/4] Running ConsistencyAuditor checks and review...")
-        audit_result = await self.consistency_auditor.audit(
-            source_text=source_text,
-            current_draft=gen_result.draft,
-            source_lang=self.source_lang,
-            target_lang=self.target_lang,
-            content_type=self.content_type
-        )
-
+        if self.memory.is_empty():
+            from core.agents.consistency_auditor import AuditResult
+            audit_result = AuditResult(
+                validation_issues=[],
+                editorial_score={"accuracy": 1.0, "consistency": 1.0, "fluency": 1.0},
+                editorial_feedback=["Bỏ qua kiểm duyệt do bộ nhớ dự án trống."],
+                audit_report="No project memory established yet. LLM consistency audit skipped."
+            )
+            check_report = CheckReport(term_flags=[], entity_flags=[], style_flags=[])
+        else:
+            audit_result = await self.consistency_auditor.audit(
+                source_text=source_text,
+                current_draft=gen_result.draft,
+                source_lang=self.source_lang,
+                target_lang=self.target_lang,
+                content_type=self.content_type
+            )
+            
+            # Fallback flags for backward compatibility of PipelineResult
+            check_report = self.consistency_auditor.check_suite.run(
+                source_text=source_text,
+                draft_text=gen_result.draft,
+                source_lang=self.source_lang,
+                target_lang=self.target_lang,
+                content_type=self.content_type,
+            )
         # Step 4: Human review via callback
         print("[4/4] Awaiting human review...")
-        
-        # Populate initial memory proposals based on audit or source text match
         memory_proposals = []
-        # Fallback flags for backward compatibility of PipelineResult
-        check_report = self.consistency_auditor.check_suite.run(
-            source_text=source_text,
-            draft_text=gen_result.draft,
-            source_lang=self.source_lang,
-            target_lang=self.target_lang,
-            content_type=self.content_type,
-        )
-        
         for f in check_report.term_flags:
             memory_proposals.append({
                 "type": "glossary",

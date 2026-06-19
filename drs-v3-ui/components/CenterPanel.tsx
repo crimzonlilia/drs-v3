@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { showToast } from './toast'
 import {
   Download,
   PanelLeft,
@@ -233,7 +234,7 @@ export default function CenterPanel({
   const [sourceLang] = useState('ja')
   const [targetLang, setTargetLang] = useState('vi')
   const [isTranslating, setIsTranslating] = useState(false)
-  const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved')
+  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'failed'>('saved')
   const [isEditingOriginal, setIsEditingOriginal] = useState(false)
 
   // Chat Timeline States
@@ -375,6 +376,17 @@ export default function CenterPanel({
             persistedMessagesRef.current.set(m.id, cacheKey)
           })
           setChatMessages(history)
+          
+          // Resume polling if any message is processing
+          const runningMsg = history.find(m => m.status === 'processing' && m.sessionId)
+          if (runningMsg && runningMsg.sessionId) {
+            setActiveSessionId(runningMsg.sessionId)
+            if (runningMsg.isImageWorkflow && runningMsg.assetId) {
+              setCurrentAssetId(runningMsg.assetId)
+              setPipelineStep('translating')
+              setIsTranslating(true)
+            }
+          }
         } else {
           // Populate timeline with initial greeting
           setChatMessages([
@@ -877,8 +889,9 @@ export default function CenterPanel({
       
       // Update preview to rendered image
       setMangaViewModes(prev => ({ ...prev, [assetId]: 'rendered' }))
+      showToast('Đã phê duyệt và vẽ dịch thành công!', 'success')
     } catch (err: any) {
-      alert(`Lỗi phê duyệt và vẽ dịch: ${err.message}`)
+      showToast(`Lỗi phê duyệt và vẽ dịch: ${err.message}`, 'error')
       setPipelineStatus(prev => ({ ...prev, render: 'failed' }))
     } finally {
       setApprovingMsgId(null)
@@ -895,8 +908,9 @@ export default function CenterPanel({
         review: 'success',
         approve: 'success' 
       }))
+      showToast('Đã duyệt bản dịch thành công!', 'success')
     } catch (err: any) {
-      alert(`Lỗi khi duyệt bản dịch: ${err.message}`)
+      showToast(`Lỗi khi duyệt bản dịch: ${err.message}`, 'error')
     } finally {
       setApprovingMsgId(null)
     }
@@ -991,11 +1005,11 @@ export default function CenterPanel({
     if (!file || !projectId) return
     try {
       const res = await uploadFont(projectId, file)
-      alert(`Đã tải lên font custom ${res.font_name} thành công!`)
+      showToast(`Đã tải lên font custom ${res.font_name} thành công!`, 'success')
       const listRes = await listFonts(projectId)
       setAvailableFonts([...listRes.default_fonts, ...listRes.custom_fonts])
     } catch (err: any) {
-      alert(`Lỗi tải lên font: ${err.message}`)
+      showToast(`Lỗi tải lên font: ${err.message}`, 'error')
     }
   }
 

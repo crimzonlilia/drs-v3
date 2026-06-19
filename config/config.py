@@ -130,6 +130,16 @@ class Config:
             "google/gemini-2.5-flash"
         )
 
+    @property
+    def ocr_model(self) -> str:
+        return self._data.get(
+            "models",
+            {}
+        ).get(
+            "ocr",
+            "google/gemini-2.5-flash:free"
+        )
+
     # -------------------------------------------------
     # Generation
     # -------------------------------------------------

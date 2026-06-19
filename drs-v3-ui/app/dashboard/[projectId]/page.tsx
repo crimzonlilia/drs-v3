@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
 import { listChapters, getProject, getChapter, saveChapter, ProjectInfo } from '@/app/api-client'
+import { showToast } from '@/components/toast'
 import { useEffect } from 'react'
 
 interface Chapter {
@@ -119,7 +120,7 @@ export default function ProjectDetails({ params }: PageProps) {
 
   const handleSubmitChapter = async () => {
     if (!newChapterTitle.trim()) {
-      alert('Please enter a document title.');
+      showToast('Vui lòng nhập tiêu đề tài liệu.', 'warning');
       return;
     }
 
@@ -135,7 +136,7 @@ export default function ProjectDetails({ params }: PageProps) {
       
       window.location.reload();
     } catch (err) {
-      alert(`Failed to create chapter: ${err}`);
+      showToast(`Không thể tạo tài liệu mới: ${err}`, 'error');
     } finally {
       setIsCreating(false);
     }
@@ -511,7 +512,7 @@ export default function ProjectDetails({ params }: PageProps) {
               </button>
               <button
                 onClick={() => {
-                  alert("Settings saved successfully!");
+                  showToast("Lưu cấu hình thành công!", "success");
                   setActiveModal(null);
                 }}
                 className="px-5 py-2 bg-accent-purple hover:bg-accent-purple/90 text-white rounded-xl text-sm font-semibold transition-colors"

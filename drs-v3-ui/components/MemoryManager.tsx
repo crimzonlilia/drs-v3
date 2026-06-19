@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { showToast } from './toast'
 import { 
   getProjectMemory, 
   addGlossaryTerm, 
@@ -54,117 +55,207 @@ export default function MemoryManager({ projectId, sourceLang, targetLang }: Mem
   const handleAddTerm = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTerm.source.trim() || !newTerm.target.trim()) return
+    const termToAdd = {
+      source_term: newTerm.source.trim(),
+      target_term: newTerm.target.trim(),
+      context_note: newTerm.note.trim()
+    }
+    
+    // Optimistic state update
+    setMemoryData(prev => ({
+      ...prev,
+      glossary: [...prev.glossary, termToAdd]
+    }))
+    setNewTerm({ source: '', target: '', note: '' })
+    
     try {
       await addGlossaryTerm(projectId, {
-        source_term: newTerm.source.trim(),
-        target_term: newTerm.target.trim(),
+        source_term: termToAdd.source_term,
+        target_term: termToAdd.target_term,
         source_lang: sourceLang,
         target_lang: targetLang,
-        context_note: newTerm.note.trim()
+        context_note: termToAdd.context_note
       })
-      setNewTerm({ source: '', target: '', note: '' })
+      showToast('Đã thêm thuật ngữ thành công!', 'success')
       loadMemory()
     } catch (err) {
       console.error(err)
-      alert('Không thể lưu thuật ngữ.')
+      showToast('Không thể lưu thuật ngữ.', 'error')
+      loadMemory()
     }
   }
 
   const handleDeleteTerm = async (sourceTerm: string) => {
     if (!confirm(`Bạn có chắc chắn muốn xóa thuật ngữ "${sourceTerm}"?`)) return
+    
+    // Optimistic state update
+    setMemoryData(prev => ({
+      ...prev,
+      glossary: prev.glossary.filter(t => t.source_term !== sourceTerm)
+    }))
+    
     try {
       await deleteGlossaryTerm(projectId, sourceLang, targetLang, sourceTerm)
+      showToast('Đã xóa thuật ngữ thành công!', 'success')
       loadMemory()
     } catch (err) {
       console.error(err)
-      alert('Không thể xóa thuật ngữ.')
+      showToast('Không thể xóa thuật ngữ.', 'error')
+      loadMemory()
     }
   }
 
   const handleAddEntity = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newEntity.id.trim() || !newEntity.target.trim() || !newEntity.source.trim()) return
+    const entityToAdd = {
+      entity_id: newEntity.id.trim(),
+      canonical_name: newEntity.target.trim(),
+      source_name: newEntity.source.trim(),
+      entity_type: newEntity.type,
+      pronouns: newEntity.pronouns.trim(),
+      notes: newEntity.notes.trim()
+    }
+    
+    // Optimistic state update
+    setMemoryData(prev => ({
+      ...prev,
+      entities: [...prev.entities, entityToAdd]
+    }))
+    setNewEntity({ id: '', source: '', target: '', type: 'character', pronouns: '', notes: '' })
+    
     try {
       await addEntity(projectId, {
-        entity_id: newEntity.id.trim(),
-        canonical_name: newEntity.target.trim(),
-        source_name: newEntity.source.trim(),
-        entity_type: newEntity.type,
+        entity_id: entityToAdd.entity_id,
+        canonical_name: entityToAdd.canonical_name,
+        source_name: entityToAdd.source_name,
+        entity_type: entityToAdd.entity_type,
         source_lang: sourceLang,
         target_lang: targetLang,
-        pronouns: newEntity.pronouns.trim(),
-        notes: newEntity.notes.trim()
+        pronouns: entityToAdd.pronouns,
+        notes: entityToAdd.notes
       })
-      setNewEntity({ id: '', source: '', target: '', type: 'character', pronouns: '', notes: '' })
+      showToast('Đã thêm thực thể thành công!', 'success')
       loadMemory()
     } catch (err) {
       console.error(err)
-      alert('Không thể lưu thực thể.')
+      showToast('Không thể lưu thực thể.', 'error')
+      loadMemory()
     }
   }
 
   const handleDeleteEntity = async (entityId: string) => {
     if (!confirm(`Bạn có chắc chắn muốn xóa thực thể "${entityId}"?`)) return
+    
+    // Optimistic state update
+    setMemoryData(prev => ({
+      ...prev,
+      entities: prev.entities.filter(e => e.entity_id !== entityId)
+    }))
+    
     try {
       await deleteEntity(projectId, entityId)
+      showToast('Đã xóa thực thể thành công!', 'success')
       loadMemory()
     } catch (err) {
       console.error(err)
-      alert('Không thể xóa thực thể.')
+      showToast('Không thể xóa thực thể.', 'error')
+      loadMemory()
     }
   }
 
   const handleAddRule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newRule.id.trim() || !newRule.description.trim()) return
+    const ruleToAdd = {
+      rule_id: newRule.id.trim(),
+      category: newRule.category,
+      description: newRule.description.trim(),
+      example_before: newRule.before.trim(),
+      example_after: newRule.after.trim()
+    }
+    
+    // Optimistic state update
+    setMemoryData(prev => ({
+      ...prev,
+      style_rules: [...prev.style_rules, ruleToAdd]
+    }))
+    setNewRule({ id: '', category: 'tone', description: '', before: '', after: '' })
+    
     try {
       await addStyleRule(projectId, {
-        rule_id: newRule.id.trim(),
-        category: newRule.category,
-        description: newRule.description.trim(),
-        example_before: newRule.before.trim(),
-        example_after: newRule.after.trim(),
+        rule_id: ruleToAdd.rule_id,
+        category: ruleToAdd.category,
+        description: ruleToAdd.description,
+        example_before: ruleToAdd.example_before,
+        example_after: ruleToAdd.example_after,
         source_lang: sourceLang,
         target_lang: targetLang
       })
-      setNewRule({ id: '', category: 'tone', description: '', before: '', after: '' })
+      showToast('Đã thêm quy tắc văn phong thành công!', 'success')
       loadMemory()
     } catch (err) {
       console.error(err)
-      alert('Không thể lưu quy tắc.')
+      showToast('Không thể lưu quy tắc.', 'error')
+      loadMemory()
     }
   }
 
   const handleDeleteRule = async (ruleId: string) => {
     if (!confirm('Bạn có chắc chắn muốn xóa quy tắc phong cách này?')) return
+    
+    // Optimistic state update
+    setMemoryData(prev => ({
+      ...prev,
+      style_rules: prev.style_rules.filter(r => r.rule_id !== ruleId)
+    }))
+    
     try {
       await deleteStyleRule(projectId, ruleId)
+      showToast('Đã xóa quy tắc thành công!', 'success')
       loadMemory()
     } catch (err) {
       console.error(err)
-      alert('Không thể xóa quy tắc.')
+      showToast('Không thể xóa quy tắc.', 'error')
+      loadMemory()
     }
   }
 
   const handleDeleteCorrection = async (correctionId: string) => {
     if (!confirm('Bạn có chắc chắn muốn từ chối phản hồi sửa lỗi này?')) return
+    
+    // Optimistic state update
+    setMemoryData(prev => ({
+      ...prev,
+      corrections: prev.corrections.filter(c => c.correction_id !== correctionId)
+    }))
+    
     try {
       await deleteCorrection(projectId, correctionId)
+      showToast('Đã từ chối phản hồi sửa lỗi.', 'success')
       loadMemory()
     } catch (err) {
       console.error(err)
-      alert('Không thể từ chối phản hồi.')
+      showToast('Không thể từ chối phản hồi.', 'error')
+      loadMemory()
     }
   }
 
   const handlePromoteCorrection = async (correctionId: string) => {
+    // Optimistic state update
+    setMemoryData(prev => ({
+      ...prev,
+      corrections: prev.corrections.map(c => c.correction_id === correctionId ? { ...c, status: 'promoted' } : c)
+    }))
+    
     try {
       await promoteCorrection(projectId, correctionId, 'glossary')
-      alert('Đã phê duyệt và chuyển đổi thành thuật ngữ Glossary thành công!')
+      showToast('Đã phê duyệt và chuyển đổi thành thuật ngữ Glossary!', 'success')
       loadMemory()
     } catch (err) {
       console.error(err)
-      alert('Không thể chuyển đổi phản hồi.')
+      showToast('Không thể chuyển đổi phản hồi.', 'error')
+      loadMemory()
     }
   }
 

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
 import { listProjects, listChapters, createProject } from '@/app/api-client'
+import { showToast } from '@/components/toast'
 
 interface Project {
   slug: string;
@@ -46,7 +47,7 @@ export default function DashboardHome() {
 
   const submitCreateProject = async () => {
     if (!newProjId || newProjId.trim() === '') {
-      alert('Please enter a project ID.');
+      showToast('Vui lòng nhập ID dự án.', 'warning');
       return;
     }
     
@@ -63,7 +64,7 @@ export default function DashboardHome() {
       setNewProjId('');
       window.location.reload();
     } catch (err) {
-      alert(`Failed to create project: ${err}`);
+      showToast(`Không thể tạo dự án mới: ${err}`, 'error');
     } finally {
       setIsCreating(false);
     }
@@ -370,7 +371,7 @@ export default function DashboardHome() {
               </button>
               <button
                 onClick={() => {
-                  alert("Settings saved successfully!");
+                  showToast("Lưu cấu hình thành công!", "success");
                   setActiveModal(null);
                 }}
                 className="px-5 py-2 bg-accent-purple hover:bg-accent-purple/90 text-white rounded-xl text-sm font-semibold transition-colors"
