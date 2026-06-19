@@ -37,17 +37,22 @@ def wrap_text_to_lines(draw: ImageDraw.ImageDraw, text: str, width: int, font: I
         lines.append(" ".join(current_line))
     return lines
 
-def get_text_height(lines: list, font: ImageFont.ImageFont) -> int:
-    line_heights = []
-    for l in lines:
+def get_font_line_height(font: ImageFont.ImageFont) -> int:
+    try:
+        ascent, descent = font.getmetrics()
+        return ascent + descent
+    except Exception:
         try:
-            bbox = font.getbbox(l)
-            line_heights.append(bbox[3] - bbox[1])
+            bbox = font.getbbox("X")
+            return bbox[3] - bbox[1]
         except Exception:
-            line_heights.append(16)
-    if not line_heights:
+            return 16
+
+def get_text_height(lines: list, font: ImageFont.ImageFont) -> int:
+    if not lines:
         return 0
-    return sum(line_heights) + (len(lines) - 1) * 2
+    lh = get_font_line_height(font)
+    return len(lines) * lh + (len(lines) - 1) * 2
 
 def load_font_at_size(font_name: str, font_bytes: bytes, size: int) -> ImageFont.ImageFont:
     if font_bytes:
@@ -174,17 +179,10 @@ def wrap_units_to_lines(draw: ImageDraw.ImageDraw, units: list[TextUnit], width:
     return lines
 
 def get_line_height(line: list[TextUnit], font: ImageFont.ImageFont, ruby_font: ImageFont.ImageFont) -> int:
-    try:
-        main_h = font.getbbox("X")[3] - font.getbbox("X")[1]
-    except Exception:
-        main_h = 16
-        
+    main_h = get_font_line_height(font)
     has_ruby = any(u.ruby for u in line)
     if has_ruby:
-        try:
-            ruby_h = ruby_font.getbbox("X")[3] - ruby_font.getbbox("X")[1]
-        except Exception:
-            ruby_h = 8
+        ruby_h = get_font_line_height(ruby_font)
         return main_h + ruby_h + 2
     return main_h
 
@@ -348,6 +346,8 @@ def draw_text_wrapped(
     font, optimal_size = find_optimal_font_size(draw, text, width_pad, height_pad, font_name, font_bytes, max_size)
     lines = wrap_text_to_lines(draw, text, width_pad, font)
     total_text_height = get_text_height(lines, font)
+    
+    lh = get_font_line_height(font)
     y = y1_pad + (height_pad - total_text_height) / 2
     
     for line in lines:
@@ -361,12 +361,7 @@ def draw_text_wrapped(
         
         x = x1_pad + (width_pad - line_w) / 2
         draw.text((x, y), line, font=font, fill=fill_color)
-        
-        try:
-            bbox = font.getbbox(line)
-            y += (bbox[3] - bbox[1]) + 2
-        except Exception:
-            y += (optimal_size + 2)
+        y += lh + 2
 
 
 def render_manga_text_layers(

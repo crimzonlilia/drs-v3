@@ -52,8 +52,8 @@ class LayoutTranslator:
     """
     def __init__(self, memory: ProjectMemory, model: str | None = None):
         self.memory = memory
-        # We use a vision-capable model. Default to google/gemini-flash-1.5:free
-        self.model = model or "google/gemini-flash-1.5:free"
+        # We use a vision-capable model. Default to cfg.ocr_model
+        self.model = model or cfg.ocr_model
         base_url = cfg.base_url
         if not base_url.endswith("/"):
             base_url += "/"
@@ -206,6 +206,8 @@ Do not include any markdown wrappers (like ```json), explanations, or notes.
         original_image_bytes: bytes,
         rendered_image_bytes: bytes,
         blocks: list[LayoutTextBlock],
+        source_lang: str = "ja",
+        target_lang: str = "vi",
         mime_type: str = "image/png"
     ) -> str:
         """
@@ -217,11 +219,22 @@ Do not include any markdown wrappers (like ```json), explanations, or notes.
         
         orig_url = f"data:{mime_type};base64,{orig_base64}"
         rend_url = f"data:{mime_type};base64,{rend_base64}"
+        
+        # Resolve language names
+        lang_names = {
+            "vi": "Vietnamese",
+            "en": "English",
+            "ja": "Japanese",
+            "zh": "Chinese",
+            "ko": "Korean",
+        }
+        src_name = lang_names.get(source_lang.lower(), source_lang)
+        tgt_name = lang_names.get(target_lang.lower(), target_lang)
  
-        prompt = """You are an expert layout and document QA reviewer.
+        prompt = f"""You are an expert layout and document QA reviewer.
 You are given two versions of a document page:
-1. The original raw page (in Japanese).
-2. The translated, typeset page (in Vietnamese).
+1. The original raw page (in {src_name}).
+2. The translated, typeset page (in {tgt_name}).
 
 Please evaluate the typesetting and layout of the translated page:
 1. Are the translated texts properly centered and sized within their layout blocks?
@@ -229,7 +242,7 @@ Please evaluate the typesetting and layout of the translated page:
 3. Does the tone of the fonts feel appropriate?
 4. Are there any blocks left untranslated?
 
-Provide a concise, bulleted review report in Vietnamese. Highlight any specific blocks (e.g. Block 1, Block 2) that require correction. If everything is perfect, simply say: "Tất cả các khối văn bản được căn lề và định dạng hoàn hảo."
+Provide a concise, bulleted review report in {tgt_name}. Highlight any specific blocks (e.g. Block 1, Block 2) that require correction. If everything is perfect, simply say a short confirmation message in {tgt_name} indicating all text blocks are perfectly aligned and formatted.
 """
         payload = {
             "model": self.model,

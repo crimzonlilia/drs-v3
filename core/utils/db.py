@@ -55,7 +55,17 @@ async def execute_query(sql: str, params: List[Any] = None) -> List[Dict[str, An
         
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
+            if response.status_code >= 400:
+                try:
+                    err_data = response.json()
+                    errors = err_data.get("errors", [])
+                    err_msg = ", ".join([e.get("message", "") for e in errors])
+                    raise RuntimeError(f"Cloudflare D1 query failed (HTTP {response.status_code}): {err_msg}")
+                except Exception as e:
+                    if isinstance(e, RuntimeError):
+                        raise e
+                    response.raise_for_status()
+            
             result_data = response.json()
             if not result_data.get("success"):
                 errors = result_data.get("errors", [])
@@ -107,7 +117,16 @@ async def execute_batch(statements: List[Tuple[str, List[Any]]]) -> None:
                     "params": norm_params
                 }
                 response = await client.post(url, json=payload, headers=headers)
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    try:
+                        err_data = response.json()
+                        errors = err_data.get("errors", [])
+                        err_msg = ", ".join([e.get("message", "") for e in errors])
+                        raise RuntimeError(f"Cloudflare D1 batch query failed (HTTP {response.status_code}): {err_msg}")
+                    except Exception as e:
+                        if isinstance(e, RuntimeError):
+                            raise e
+                        response.raise_for_status()
                 result_data = response.json()
                 if not result_data.get("success"):
                     errors = result_data.get("errors", [])
@@ -168,7 +187,7 @@ async def init_db() -> None:
         target_text   TEXT,
         asset_id      TEXT,
         bbox          TEXT,
-        approved_by   INTEGER REFERENCES users(id),
+        approved_by   INTEGER,
         approved_at   TEXT,
         UNIQUE(project_id, doc_id, segment_id)
     );

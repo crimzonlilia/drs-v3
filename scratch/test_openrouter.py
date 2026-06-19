@@ -1,37 +1,34 @@
+import os
+import httpx
 import asyncio
-import sys
-from pathlib import Path
+from dotenv import load_dotenv
 
-# Add project root to path
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+load_dotenv()
 
-from core.memory import ProjectMemory
-from core.agents.candidate_generator import CandidateGenerator
-
-async def test():
-    try:
-        mem = ProjectMemory("demo_project")
-        gen = CandidateGenerator(mem)
-        res = await gen.generate(
-            source_text="ちなみに本物と同じモーションで代わりに攻撃する",
-            source_lang="ja",
-            target_lang="vi",
-            content_type="comic"
-        )
-        
-        output = []
-        output.append(f"Model: {gen.model}")
-        output.append(f"Draft: {res.draft}")
-        if res.raw_response:
-            output.append(f"Raw Response: {res.raw_response}")
-            
-        with open("scratch/openrouter_result.txt", "w", encoding="utf-8") as f:
-            f.write("\n".join(output))
-            
-    except Exception as e:
-        import traceback
-        with open("scratch/openrouter_result.txt", "w", encoding="utf-8") as f:
-            f.write(traceback.format_exc())
+async def main():
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    print(f"API Key present: {bool(api_key)}")
+    if api_key:
+        print(f"API Key prefix: {api_key[:10]}")
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "https://github.com/drs-v3",
+        "X-Title": "DRS v3 Test",
+    }
+    payload = {
+        "model": "qwen/qwen3.5-flash-02-23",
+        "messages": [{"role": "user", "content": "say hi"}],
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            print("Sending request to OpenRouter...")
+            resp = await client.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=10.0)
+            print(f"Status code: {resp.status_code}")
+            print(f"Response: {resp.text}")
+        except Exception as e:
+            print(f"Request failed: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(test())
+    asyncio.run(main())

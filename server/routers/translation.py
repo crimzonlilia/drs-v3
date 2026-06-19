@@ -629,7 +629,8 @@ async def run_bulk_translation_pipeline_task(
     doc_id: str,
     source_lang: str,
     target_lang: str,
-    fast_mode: bool = True
+    fast_mode: bool = True,
+    user_id: int = 1
 ):
     """
     Background task that iterates over all un-translated segments of a document
@@ -692,8 +693,8 @@ async def run_bulk_translation_pipeline_task(
                     seg_id = seg["segment_id"]
                     target_text = translations.get(seg_id, "")
                     db_updates.append((
-                        "UPDATE segments SET target_text = ?, approved_at = ?, approved_by = 'system' WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
-                        [target_text, approved_at, project_id, doc_id, seg_id]
+                        "UPDATE segments SET target_text = ?, approved_at = ?, approved_by = ? WHERE project_id = ? AND doc_id = ? AND segment_id = ?",
+                        [target_text, approved_at, user_id, project_id, doc_id, seg_id]
                     ))
                 if db_updates:
                     await execute_batch(db_updates)

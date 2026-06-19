@@ -329,7 +329,8 @@ async def run_image_translation_pipeline_task(
     asset_id: str,
     source_lang: str,
     target_lang: str,
-    session_id: str
+    session_id: str,
+    user_id: int = 1
 ):
     from core.workflow.approval_gate import SESSION_CACHE
     from core.ocr.router import OCRRouter
@@ -398,9 +399,9 @@ async def run_image_translation_pipeline_task(
                     """
                     INSERT INTO segments (
                         project_id, doc_id, segment_id, segment_type, source_text, target_text, asset_id, bbox, approved_by, approved_at
-                    ) VALUES (?, ?, ?, 'bubble', ?, ?, ?, ?, 'system', ?)
+                    ) VALUES (?, ?, ?, 'bubble', ?, ?, ?, ?, ?, ?)
                     """,
-                    [project_id, doc_id, segment_id, block["source_text"], block["target_text"], asset_id, json.dumps(block["bbox"]), approved_at]
+                    [project_id, doc_id, segment_id, block["source_text"], block["target_text"], asset_id, json.dumps(block["bbox"]), user_id, approved_at]
                 ))
             await execute_batch(db_statements)
             print(f"[IMAGE PIPELINE] Saved {len(blocks)} segments to SQLite/D1.")
@@ -559,7 +560,8 @@ async def translate_image(
         asset_id=asset_id,
         source_lang=source_lang,
         target_lang=target_lang,
-        session_id=session.session_id
+        session_id=session.session_id,
+        user_id=current_user["id"]
     )
     
     return {
@@ -756,7 +758,8 @@ async def upload_text_bulk(
         doc_id=doc_id,
         source_lang=source_lang,
         target_lang=target_lang,
-        fast_mode=True
+        fast_mode=True,
+        user_id=current_user["id"]
     )
     
     return {
