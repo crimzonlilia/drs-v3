@@ -236,6 +236,24 @@ async def init_db() -> None:
         model            TEXT,
         created_at       TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS chapter_summaries (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id   TEXT NOT NULL REFERENCES projects(id),
+        chapter_id   TEXT NOT NULL,
+        summary_text TEXT NOT NULL,
+        created_at   TEXT NOT NULL,
+        UNIQUE(project_id, chapter_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS knowledge_base (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id   TEXT NOT NULL REFERENCES projects(id),
+        doc_id       TEXT NOT NULL,
+        chunk_text   TEXT NOT NULL,
+        embedding    TEXT NOT NULL,
+        created_at   TEXT NOT NULL
+    );
     """
     
     # Split schema by semicolon to run individually on SQLite/D1
@@ -270,5 +288,7 @@ async def init_db() -> None:
         ("CREATE INDEX IF NOT EXISTS idx_segments_doc ON segments(project_id, doc_id);", []),
         ("CREATE INDEX IF NOT EXISTS idx_assets_doc ON assets(project_id, doc_id);", []),
         ("CREATE INDEX IF NOT EXISTS idx_chat_history ON chat_history(project_id, doc_id);", []),
+        ("CREATE INDEX IF NOT EXISTS idx_kb_project_doc ON knowledge_base(project_id, doc_id);", []),
+        ("CREATE INDEX IF NOT EXISTS idx_cs_project_chap ON chapter_summaries(project_id, chapter_id);", []),
     ]
     await execute_batch(idx_statements)

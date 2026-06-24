@@ -72,7 +72,7 @@ class ConsistencyAuditor:
 
         # 3. Format validation issues and metrics
         validation_issues = self._format_validation_issues(check_report, current_draft)
-        editorial_score, editorial_feedback = self._calculate_editorial_metrics(check_report, review_result.review_note)
+        editorial_score, editorial_feedback = self._calculate_editorial_metrics(check_report, review_result.review_note, target_lang=target_lang)
 
         return AuditResult(
             validation_issues=validation_issues,
@@ -132,7 +132,7 @@ class ConsistencyAuditor:
             target_lang=session.target_lang
         )
         
-        score, feedback = self._calculate_editorial_metrics(check_report, session.audit_report)
+        score, feedback = self._calculate_editorial_metrics(check_report, session.audit_report, target_lang=session.target_lang)
         session.editorial_score = score
         session.editorial_feedback = feedback
         return score, feedback
@@ -145,24 +145,46 @@ class ConsistencyAuditor:
         if not session:
             return ""
             
-        report_lines = [
-            f"# Báo cáo kiểm định phiên: {session_id}",
-            f"Thời gian: {datetime.now().isoformat()}",
-            "",
-            "## Lỗi chặn duyệt (Blocking Issues):"
-        ]
-        if session.validation_issues:
-            for issue in session.validation_issues:
-                report_lines.append(f"- [{issue.get('violation_type')}] Từ gốc: '{issue.get('source_term')}' -> Lỗi: '{issue.get('violated_term')}' ({issue.get('detail')})")
+        target_lang = getattr(session, "target_lang", "vi")
+        
+        if target_lang == "vi":
+            report_lines = [
+                f"# Báo cáo kiểm định phiên: {session_id}",
+                f"Thời gian: {datetime.now().isoformat()}",
+                "",
+                "## Lỗi chặn duyệt (Blocking Issues):"
+            ]
+            if session.validation_issues:
+                for issue in session.validation_issues:
+                    report_lines.append(f"- [{issue.get('violation_type')}] Từ gốc: '{issue.get('source_term')}' -> Lỗi: '{issue.get('violated_term')}' ({issue.get('detail')})")
+            else:
+                report_lines.append("- Không phát hiện lỗi chặn duyệt.")
+                
+            report_lines.append("\n## Nhận xét văn phong & Gợi ý (Advisory Feedback):")
+            if session.editorial_feedback:
+                for fb in session.editorial_feedback:
+                    report_lines.append(f"- {fb}")
+            else:
+                report_lines.append("- Gợi ý văn phong đạt chất lượng.")
         else:
-            report_lines.append("- Không phát hiện lỗi chặn duyệt.")
-            
-        report_lines.append("\n## Nhận xét văn phong & Gợi ý (Advisory Feedback):")
-        if session.editorial_feedback:
-            for fb in session.editorial_feedback:
-                report_lines.append(f"- {fb}")
-        else:
-            report_lines.append("- Gợi ý văn phong đạt chất lượng.")
+            report_lines = [
+                f"# Audit Report for Session: {session_id}",
+                f"Time: {datetime.now().isoformat()}",
+                "",
+                "## Blocking Issues:"
+            ]
+            if session.validation_issues:
+                for issue in session.validation_issues:
+                    report_lines.append(f"- [{issue.get('violation_type')}] Original: '{issue.get('source_term')}' -> Error: '{issue.get('violated_term')}' ({issue.get('detail')})")
+            else:
+                report_lines.append("- No blocking issues detected.")
+                
+            report_lines.append("\n## Style & Advisory Feedback:")
+            if session.editorial_feedback:
+                for fb in session.editorial_feedback:
+                    report_lines.append(f"- {fb}")
+            else:
+                report_lines.append("- Style and quality are optimal.")
             
         summary = "\n".join(report_lines)
         session.audit_report = summary
@@ -244,7 +266,7 @@ class ConsistencyAuditor:
             
         return issues
 
-    def _calculate_editorial_metrics(self, report: CheckReport, review_note: str) -> Tuple[Dict[str, float], List[str]]:
+    def _calculate_editorial_metrics(self, report: CheckReport, review_note: str, target_lang: str = "vi") -> Tuple[Dict[str, float], List[str]]:
         from datetime import datetime
         accuracy = max(0.5, 1.0 - len(report.term_flags) * 0.1)
         consistency = max(0.5, 1.0 - len(report.entity_flags) * 0.1)
@@ -257,10 +279,16 @@ class ConsistencyAuditor:
         }
         
         feedback = []
-        if report.term_flags:
-            feedback.append(f"Cần chú ý định nghĩa thuật ngữ: {', '.join([f.source_term for f in report.term_flags])}")
-        if report.entity_flags:
-            feedback.append(f"Lỗi nhất quán nhân vật: {', '.join([f.source_name for f in report.entity_flags])}")
+        if target_lang == "vi":
+            if report.term_flags:
+                feedback.append(f"Cần chú ý định nghĩa thuật ngữ: {', '.join([f.source_term for f in report.term_flags])}")
+            if report.entity_flags:
+                feedback.append(f"Lỗi nhất quán nhân vật: {', '.join([f.source_name for f in report.entity_flags])}")
+        else:
+            if report.term_flags:
+                feedback.append(f"Pay attention to terminology definitions: {', '.join([f.source_term for f in report.term_flags])}")
+            if report.entity_flags:
+                feedback.append(f"Character consistency issues: {', '.join([f.source_name for f in report.entity_flags])}")
         if review_note:
             feedback.append(review_note)
             

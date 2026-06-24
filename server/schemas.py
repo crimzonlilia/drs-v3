@@ -131,6 +131,7 @@ class ChatRequest(BaseModel):
     message: str
     message_id: Optional[str] = None
     history: Optional[List[Dict[str, str]]] = None
+    user_lang: Optional[str] = "en"
 
 
 class ChatResponse(BaseModel):

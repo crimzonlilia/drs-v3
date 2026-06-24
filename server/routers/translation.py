@@ -104,7 +104,7 @@ async def run_translation(request: TranslateRequest, current_user: dict = Depend
     # Verify editor permissions
     await verify_project_member(request.project_id, current_user["id"], "editor")
     
-    mem = ProjectMemory(request.project_id)
+    mem = ProjectMemory(request.project_id, request.source_lang, request.target_lang)
     
     # Fetch project description
     project_rows = await execute_query("SELECT description FROM projects WHERE id = ?", [request.project_id])
@@ -252,7 +252,7 @@ async def approve_translation(
     # Verify editor permissions
     await verify_project_member(session.project_id, current_user["id"], "editor")
     
-    mem = ProjectMemory(session.project_id)
+    mem = ProjectMemory(session.project_id, session.source_lang, session.target_lang)
     gate = ApprovalGate(mem)
 
     try:
@@ -339,7 +339,7 @@ async def refine_session(session_id: str, data: dict, current_user: dict = Depen
     
     # Run candidate generator refinement or mock it if model/API fails
     try:
-        mem = ProjectMemory(session.project_id)
+        mem = ProjectMemory(session.project_id, session.source_lang, session.target_lang)
         async with TranslationAgent(mem) as agent:
             ref_result = await agent.revise(
                 source_text=session.source_text,
@@ -370,7 +370,7 @@ async def refine_session(session_id: str, data: dict, current_user: dict = Depen
         })
         
     # Auto-save state to R2 on draft / proposal updates
-    mem = ProjectMemory(session.project_id)
+    mem = ProjectMemory(session.project_id, session.source_lang, session.target_lang)
     gate = ApprovalGate(mem)
     gate.save_translation_draft(session)
         
@@ -437,7 +437,7 @@ async def update_session_draft(session_id: str, data: dict, current_user: dict =
     session.current_draft = data.get("current_draft", session.current_draft)
     
     # Auto-save state to R2
-    mem = ProjectMemory(session.project_id)
+    mem = ProjectMemory(session.project_id, session.source_lang, session.target_lang)
     gate = ApprovalGate(mem)
     gate.save_translation_draft(session)
     
@@ -459,7 +459,7 @@ async def update_session_proposals(session_id: str, data: dict, current_user: di
     session.memory_proposals = data.get("memory_proposals", session.memory_proposals)
     
     # Auto-save state to R2
-    mem = ProjectMemory(session.project_id)
+    mem = ProjectMemory(session.project_id, session.source_lang, session.target_lang)
     gate = ApprovalGate(mem)
     gate.save_translation_draft(session)
     
@@ -477,8 +477,6 @@ async def chat_assistant(
     """
     await verify_project_member(request.project_id, current_user["id"], "viewer")
     
-    mem = ProjectMemory(request.project_id)
-    
     # 1. Fetch project details
     project_rows = await execute_query("SELECT description, source_lang, target_lang FROM projects WHERE id = ?", [request.project_id])
     if not project_rows:
@@ -487,17 +485,71 @@ async def chat_assistant(
     source_lang = project_rows[0].get("source_lang", "ja")
     target_lang = project_rows[0].get("target_lang", "vi")
     
-    # 2. Build memory context (Glossary, Entities, Styles)
+    mem = ProjectMemory(request.project_id, source_lang, target_lang)
+    
+    # 2. Build Layer 1 memory context (Glossary, Entities, Styles)
     memory_context = mem.build_prompt_context(source_lang, target_lang)
     
+    # 3. Retrieve Layer 2 Chapter Summaries context
+    cs_rows = await execute_query(
+        "SELECT chapter_id, summary_text FROM chapter_summaries WHERE project_id = ? ORDER BY chapter_id ASC",
+        [request.project_id]
+    )
+    cs_context_list = [f"- Chapter {r['chapter_id']}: {r['summary_text']}" for r in cs_rows]
+    cs_context = "\n".join(cs_context_list) if cs_context_list else "(No chapter summaries approved yet)"
+
+    # 4. Retrieve Layer 3 Knowledge Base context via hybrid semantic search
+    from core.utils.kb_service import search_kb
+    kb_matches = await search_kb(request.project_id, request.message, limit=4)
+    kb_context_list = [f"[Source: {m['doc_id']}] (Similarity/Relevance: {m.get('score', 1.0)})\n{m['text']}" for m in kb_matches]
+    kb_context = "\n\n".join(kb_context_list) if kb_context_list else "(No matching reference documents found)"
+
+    user_lang = request.user_lang or "en"
+    lang_names = {
+        "en": "English",
+        "vi": "Vietnamese",
+        "ja": "Japanese",
+        "zh": "Chinese",
+        "ko": "Korean",
+        "lo": "Lao",
+        "es": "Spanish",
+        "fr": "French",
+        "de": "German",
+        "it": "Italian",
+        "ru": "Russian",
+        "pt": "Portuguese",
+        "th": "Thai",
+        "id": "Indonesian",
+        "ms": "Malay",
+        "ar": "Arabic",
+        "hi": "Hindi",
+        "tl": "Tagalog"
+    }
+    lang_name = lang_names.get(user_lang, "English")
+
     system_prompt = f"""You are a helpful, professional localization assistant for the project '{request.project_id}'.
 Project Context/Description:
 {project_description or "(No project description provided)"}
 
-Here is the approved project memory (Glossary, Character Entities, and Styles) that you can reference to answer user queries:
+---
+
+LAYER 1: APPROVED PROJECT MEMORY (Glossary, Character Entities, and Styles):
 {memory_context or "(No approved memory yet for this project)"}
 
+---
+
+LAYER 2: CHAPTER SUMMARIES (Narrative continuity of previously approved chapters):
+{cs_context}
+
+---
+
+LAYER 3: REFERENCE & KNOWLEDGE BASE MATCHES:
+{kb_context}
+
+---
+
 The user may talk to you, ask general questions about the project, characters, grammar, or ask for translation advice.
+You MUST reply to the user in {lang_name} by default, unless the user explicitly requests another language in their messages.
 Answer naturally, concisely, and helpfully. Keep your tone professional.
 """
     
@@ -642,7 +694,7 @@ async def run_bulk_translation_pipeline_task(
     from core.utils.db import execute_query
     from datetime import datetime
 
-    mem = ProjectMemory(project_id)
+    mem = ProjectMemory(project_id, source_lang, target_lang)
     
     # Get project description
     project_rows = await execute_query("SELECT description FROM projects WHERE id = ?", [project_id])

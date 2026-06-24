@@ -15,11 +15,36 @@ import {
   FileText, 
   Plus,
   Moon,
-  Sun
+  Sun,
+  Globe
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
-import { listProjects, listChapters, createProject } from '@/app/api-client'
+import { useLanguage } from '@/app/i18n'
+import { listProjects, listChapters, createProject, getProject } from '@/app/api-client'
 import { showToast } from '@/components/toast'
+
+const LANGUAGES = [
+  { code: 'auto', name: 'Tự động nhận diện (Auto Detect)' },
+  { code: 'multi', name: 'Đa ngôn ngữ (Multilingual)' },
+  { code: 'ja', name: 'Japanese (Tiếng Nhật)' },
+  { code: 'en', name: 'English (Tiếng Anh)' },
+  { code: 'vi', name: 'Vietnamese (Tiếng Việt)' },
+  { code: 'zh', name: 'Chinese (Tiếng Trung)' },
+  { code: 'ko', name: 'Korean (Tiếng Hàn)' },
+  { code: 'lo', name: 'Lao (Tiếng Lào)' },
+  { code: 'es', name: 'Spanish (Tiếng Tây Ban Nha)' },
+  { code: 'fr', name: 'French (Tiếng Pháp)' },
+  { code: 'de', name: 'German (Tiếng Đức)' },
+  { code: 'it', name: 'Italian (Tiếng Ý)' },
+  { code: 'ru', name: 'Russian (Tiếng Nga)' },
+  { code: 'pt', name: 'Portuguese (Tiếng Bồ Đào Nha)' },
+  { code: 'th', name: 'Thai (Tiếng Thái)' },
+  { code: 'id', name: 'Indonesian (Tiếng Indonesia)' },
+  { code: 'ms', name: 'Malay (Tiếng Mã Lai)' },
+  { code: 'ar', name: 'Arabic (Tiếng Ả Rập)' },
+  { code: 'hi', name: 'Hindi (Tiếng Ấn Độ)' },
+  { code: 'tl', name: 'Tagalog (Tiếng Tagalog)' }
+]
 
 interface Project {
   slug: string;
@@ -31,12 +56,14 @@ interface Project {
 
 export default function DashboardHome() {
   const { theme, toggleTheme } = useTheme()
+  const { language, setLanguage, t } = useLanguage()
   const [searchQuery, setSearchQuery] = useState('')
   const [projectsList, setProjectsList] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [newProjId, setNewProjId] = useState('')
-  const [newProjSource, setNewProjSource] = useState('ja')
+  const [newProjSource, setNewProjSource] = useState('auto')
   const [newProjTarget, setNewProjTarget] = useState('vi')
   const [isCreating, setIsCreating] = useState(false)
   const [activeModal, setActiveModal] = useState<'shared' | 'settings' | null>(null)
@@ -45,66 +72,91 @@ export default function DashboardHome() {
     setIsCreateOpen(true)
   }
 
+  const slugify = (text: string) => {
+    return text
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '_')
+      .replace(/-+/g, '_')
+      .trim();
+  };
+
+  const loadProjects = async () => {
+    setLoading(true);
+    try {
+      const slugs = await listProjects();
+      const list = await Promise.all(
+        slugs.map(async (slug) => {
+          try {
+            const [chapters, info] = await Promise.all([
+              listChapters(slug),
+              getProject(slug)
+            ]);
+            return {
+              slug,
+              title: info.description || (slug === 'demo_project' ? 'Dự án Dịch thuật' : slug),
+              updatedAt: 'Just now',
+              pages: chapters.length
+            };
+          } catch (err) {
+            return {
+              slug,
+              title: slug === 'demo_project' ? 'Dự án Dịch thuật' : slug,
+              updatedAt: 'Just now',
+              pages: 0
+            };
+          }
+        })
+      );
+      setProjectsList(list);
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const submitCreateProject = async () => {
     if (!newProjId || newProjId.trim() === '') {
-      showToast('Vui lòng nhập ID dự án.', 'warning');
+      showToast(t('enterProjNameWarning'), 'warning');
       return;
     }
     
     setIsCreating(true);
     try {
+      const name = newProjId.trim();
+      let slugId = slugify(name);
+      if (!slugId) {
+        slugId = 'project_' + Date.now();
+      } else {
+        slugId = `${slugId}_${Math.random().toString(36).substring(2, 6)}`;
+      }
+
       await createProject({
-        project_id: newProjId.trim(),
-        source_lang: newProjSource.trim(),
-        target_lang: newProjTarget.trim(),
+        project_id: slugId,
+        description: name,
+        source_lang: newProjSource,
+        target_lang: newProjTarget,
         content_type: 'novel',
         tone_note: 'Dịch mượt mà'
       });
       setIsCreateOpen(false);
       setNewProjId('');
-      window.location.reload();
+      await loadProjects();
+      showToast(t('createProjSuccess'), 'success');
     } catch (err) {
-      showToast(`Không thể tạo dự án mới: ${err}`, 'error');
+      showToast(`${t('createProjError')} ${err}`, 'error');
     } finally {
       setIsCreating(false);
     }
-  }
+  };
 
   React.useEffect(() => {
-    let active = true;
-    async function load() {
-      try {
-        const slugs = await listProjects();
-        if (!active) return;
-        const list = await Promise.all(
-          slugs.map(async (slug) => {
-            try {
-              const chapters = await listChapters(slug);
-              return {
-                slug,
-                title: slug === 'demo_project' ? 'Dự án Dịch thuật' : slug,
-                updatedAt: 'Just now',
-                pages: chapters.length
-              };
-            } catch (err) {
-              return {
-                slug,
-                title: slug === 'demo_project' ? 'Dự án Dịch thuật' : slug,
-                updatedAt: 'Just now',
-                pages: 0
-              };
-            }
-          })
-        );
-        if (active) {
-          setProjectsList(list);
-        }
-      } catch (err) {
-        console.error('Failed to load projects:', err);
-      }
-    }
-    load();
-    return () => { active = false; };
+    loadProjects();
   }, []);
 
   const filteredProjects = projectsList.filter(p => 
@@ -135,7 +187,7 @@ export default function DashboardHome() {
                 <path d="M6 22C6 11 35 3.5 85 3.5C135 3.5 164 11 164 22C164 33 135 41.5 85 41.5C35 41.5 6 33 6 22Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <Home size={18} className="text-white" />
-              <span>My work</span>
+              <span>{t('selectProject')}</span>
             </div>
 
             <div 
@@ -143,7 +195,7 @@ export default function DashboardHome() {
               className="py-2 px-3 flex items-center gap-3 hover:text-white cursor-pointer transition-colors"
             >
               <Users size={18} />
-              <span>Shared w/ me</span>
+              <span>{language === 'en' ? 'Shared with me' : 'Được chia sẻ'}</span>
             </div>
 
             <div 
@@ -151,13 +203,22 @@ export default function DashboardHome() {
               className="py-2 px-3 flex items-center gap-3 hover:text-white cursor-pointer transition-colors"
             >
               <Settings size={18} />
-              <span>Settings</span>
+              <span>{t('sidebarSettings')}</span>
             </div>
           </nav>
         </div>
 
         {/* Sidebar Footer */}
-        <div className="space-y-4">
+        <div className="space-y-3">
+          <button
+            onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')}
+            className="flex items-center gap-3 py-2 px-3 w-full hover:text-white transition-colors text-left"
+            title="Switch Language"
+          >
+            <Globe size={18} className="text-accent-purple dark:text-accent-violet" />
+            <span>{language === 'en' ? 'Tiếng Việt' : 'English'}</span>
+          </button>
+
           <button
             onClick={toggleTheme}
             className="flex items-center gap-3 py-2 px-3 w-full hover:text-white transition-colors text-left"
@@ -165,12 +226,12 @@ export default function DashboardHome() {
             {theme === 'light' ? (
               <>
                 <Moon size={18} />
-                <span>Dark Mode</span>
+                <span>{t('themeDark')}</span>
               </>
             ) : (
               <>
                 <Sun size={18} className="text-accent-cyan" />
-                <span>Light Mode</span>
+                <span>{t('themeLight')}</span>
               </>
             )}
           </button>
@@ -195,14 +256,14 @@ export default function DashboardHome() {
           {/* Title & Add New Button */}
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-serif font-bold text-slate-950 dark:text-slate-50">
-              My work <span className="text-slate-400 font-sans font-normal text-lg">({filteredProjects.length})</span>
+              {t('selectProject')} <span className="text-slate-400 font-sans font-normal text-lg">({filteredProjects.length})</span>
             </h1>
             <button 
               onClick={handleCreateProject}
               className="px-4 py-1.5 bg-slate-950 hover:bg-slate-850 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
             >
               <Plus size={14} />
-              New
+              {t('createProjectBtn')}
             </button>
           </div>
 
@@ -213,7 +274,7 @@ export default function DashboardHome() {
               <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder={t('searchProjects')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-1.5 w-48 bg-slate-200/40 dark:bg-slate-800/30 border border-slate-300/40 dark:border-slate-700/40 rounded-full text-xs focus:w-64 focus:border-accent-purple/50 focus:outline-none transition-all duration-300"
@@ -232,54 +293,73 @@ export default function DashboardHome() {
 
         {/* Projects Folders Grid Container - Scrollable */}
         <div className="flex-1 overflow-y-auto p-8 max-w-5xl w-full mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-12 pt-4">
-            {filteredProjects.map((project) => (
-              <div key={project.slug} className="relative group">
-                
-                {/* Folder Tab Shape */}
-                <div className="absolute -top-3 left-0 w-24 h-4 bg-themeCard rounded-t-lg border-t border-l border-r border-themeBorder transition-colors duration-200" />
-
-                {/* Folder Body */}
-                <div className="relative w-full min-h-[140px] bg-themeCard rounded-b-xl rounded-tr-xl border border-themeBorder p-5 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-accent-purple/65 dark:hover:border-slate-750 transition-all duration-200">
-                  {/* Top line of folder */}
-                  <div className="flex items-start justify-between gap-4">
-                    <Link href={`/dashboard/${project.slug}`} className="block flex-1 group-hover:opacity-90">
-                      <h2 className="text-lg font-serif font-semibold text-slate-900 dark:text-slate-100 line-clamp-1">
-                        {project.title}
-                      </h2>
-                    </Link>
-                    <button className="p-1 hover:bg-slate-300/40 dark:hover:bg-slate-800 rounded transition-colors text-slate-400 dark:text-slate-500">
-                      <MoreHorizontal size={16} />
-                    </button>
-                  </div>
-
-                  {/* Bottom line with metadata */}
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-4 mt-auto border-t border-slate-200/20">
-                    {/* Timestamp */}
-                    <div className="flex items-center gap-1">
-                      <Clock size={12} className="text-slate-400" />
-                      <span>{project.updatedAt}</span>
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-12 pt-4 animate-pulse select-none">
+              {[1, 2, 3, 4].map((n) => (
+                <div key={n} className="relative">
+                  <div className="absolute -top-3 left-0 w-24 h-4 bg-themeCard/60 rounded-t-lg border-t border-l border-r border-themeBorder/40" />
+                  <div className="relative w-full min-h-[140px] bg-themeCard/60 rounded-b-xl rounded-tr-xl border border-themeBorder/40 p-5 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded-md w-3/4 animate-pulse"></div>
+                      <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded-md w-1/2 animate-pulse"></div>
                     </div>
-
-                    {/* File count & Translate CTA */}
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-3 font-medium">
-                        {project.pages && (
-                          <div className="flex items-center gap-1">
-                            <FileText size={12} className="text-slate-400" />
-                            <span>{project.pages}</span>
-                          </div>
-                        )}
-                      </div>
-                      <Link href={`/dashboard/${project.slug}`} className="px-3 py-1 bg-accent-purple/10 hover:bg-accent-purple/20 text-accent-purple dark:text-accent-violet rounded-full font-semibold transition-all">
-                        Dịch / Mở →
-                      </Link>
+                    <div className="flex items-center justify-between mt-6 pt-4 border-t border-themeBorder/30">
+                      <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded-md w-1/4 animate-pulse"></div>
+                      <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded-md w-1/4 animate-pulse"></div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-12 pt-4">
+              {filteredProjects.map((project) => (
+                <div key={project.slug} className="relative group">
+                  {/* Folder Tab Shape */}
+                  <div className="absolute -top-3 left-0 w-24 h-4 bg-themeCard rounded-t-lg border-t border-l border-r border-themeBorder transition-colors duration-200" />
+
+                  {/* Folder Body */}
+                  <div className="relative w-full min-h-[140px] bg-themeCard rounded-b-xl rounded-tr-xl border border-themeBorder p-5 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-accent-purple/65 dark:hover:border-slate-750 transition-all duration-200">
+                    {/* Top line of folder */}
+                    <div className="flex items-start justify-between gap-4">
+                      <Link href={`/dashboard/${project.slug}`} className="block flex-1 group-hover:opacity-90">
+                        <h2 className="text-lg font-serif font-semibold text-slate-900 dark:text-slate-100 line-clamp-1">
+                          {project.title}
+                        </h2>
+                      </Link>
+                      <button className="p-1 hover:bg-slate-300/40 dark:hover:bg-slate-800 rounded transition-colors text-slate-400 dark:text-slate-500">
+                        <MoreHorizontal size={16} />
+                      </button>
+                    </div>
+
+                    {/* Bottom line with metadata */}
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-4 mt-auto border-t border-slate-200/20">
+                      {/* Timestamp */}
+                      <div className="flex items-center gap-1">
+                        <Clock size={12} className="text-slate-400" />
+                        <span>{project.updatedAt}</span>
+                      </div>
+
+                      {/* File count & Translate CTA */}
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 font-medium">
+                          {project.pages && (
+                            <div className="flex items-center gap-1">
+                              <FileText size={12} className="text-slate-400" />
+                              <span>{project.pages}</span>
+                            </div>
+                          )}
+                        </div>
+                        <Link href={`/dashboard/${project.slug}`} className="px-3 py-1 bg-accent-purple/10 hover:bg-accent-purple/20 text-accent-purple dark:text-accent-violet rounded-full font-semibold transition-all">
+                          {language === 'en' ? 'Open →' : 'Mở →'}
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
 
@@ -387,50 +467,53 @@ export default function DashboardHome() {
       {isCreateOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-themeCard border border-themeBorder rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in text-themeText">
-            <h3 className="text-xl font-serif font-bold mb-4">Create New Project</h3>
+            <h3 className="text-xl font-serif font-bold mb-4">{t('createNewProjectTitle')}</h3>
             
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
-                  Project ID (Name)
+                  {t('projectNameLabel')}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. doc-translation"
+                  placeholder={language === 'en' ? 'e.g. Richard I Crusade Campaign' : 'Ví dụ: Chiến dịch Thập tự chinh Richard I'}
                   value={newProjId}
                   onChange={(e) => setNewProjId(e.target.value)}
                   className="w-full px-4 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-sm focus:border-accent-purple/50 focus:outline-none transition-colors"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
-                    Source
+                    {t('sourceLang')}
                   </label>
                   <select
                     value={newProjSource}
                     onChange={(e) => setNewProjSource(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-sm focus:border-accent-purple/50 focus:outline-none transition-colors"
+                    className="w-full px-3 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-xs focus:border-accent-purple/50 focus:outline-none transition-colors text-themeText"
                   >
-                    <option value="ja">Japanese</option>
-                    <option value="en">English</option>
-                    <option value="vi">Vietnamese</option>
-                    <option value="zh">Chinese</option>
+                    {LANGUAGES.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
-                    Target
+                    {t('targetLangLabel')}
                   </label>
                   <select
                     value={newProjTarget}
                     onChange={(e) => setNewProjTarget(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-sm focus:border-accent-purple/50 focus:outline-none transition-colors"
+                    className="w-full px-3 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-xs focus:border-accent-purple/50 focus:outline-none transition-colors text-themeText"
                   >
-                    <option value="vi">Vietnamese</option>
-                    <option value="en">English</option>
-                    <option value="ja">Japanese</option>
-                    <option value="zh">Chinese</option>
+                    {LANGUAGES.filter(l => l.code !== 'auto' && l.code !== 'multi').map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -441,14 +524,14 @@ export default function DashboardHome() {
                 onClick={() => setIsCreateOpen(false)}
                 className="px-4 py-2 hover:bg-themeBg rounded-xl text-sm font-medium transition-colors"
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 onClick={submitCreateProject}
                 disabled={isCreating}
                 className="px-5 py-2 bg-accent-purple hover:bg-accent-purple/90 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-colors"
               >
-                {isCreating ? 'Creating...' : 'Create'}
+                {isCreating ? t('creating') : t('create')}
               </button>
             </div>
           </div>

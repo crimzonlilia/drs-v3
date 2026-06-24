@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { showToast } from './toast'
 import { FileText, PanelLeft, Plus, Trash2, UploadCloud } from 'lucide-react'
-import { listChapters, deleteChapter, saveChapter, uploadTextBulk } from '@/app/api-client'
+import { listChapters, deleteChapter, saveChapter, uploadTextBulk, getChapter } from '@/app/api-client'
+import { useLanguage } from '@/app/i18n'
 
 interface LeftSidebarProps {
   projectId: string
@@ -24,13 +25,52 @@ export default function LeftSidebar({
   onClose
 }: LeftSidebarProps) {
   const [fileList, setFileList] = useState<string[]>([])
+  const [chapterTitles, setChapterTitles] = useState<Record<string, string>>({})
+  const { language, t } = useLanguage()
+
+  const formatDoc = (ch: string) => {
+    if (!ch) return ''
+    if (chapterTitles[ch]) {
+      return chapterTitles[ch]
+    }
+    const clean = ch.replace(/\.md$/, '').replace(/_draft$/, '').replace(/_review$/, '').replace(/_final$/, '')
+    const match = clean.match(/^ch(\d+)$/i);
+    if (match) {
+      return language === 'en' ? `Document ${parseInt(match[1], 10)}` : `Tài liệu ${parseInt(match[1], 10)}`;
+    }
+    return clean.charAt(0).toUpperCase() + clean.slice(1);
+  };
 
   useEffect(() => {
     let active = true
     async function loadData() {
       try {
         const chapters = await listChapters(projectId)
-        if (active) setFileList(chapters?.length ? chapters : defaultFiles)
+        if (active) {
+          const list = chapters?.length ? chapters : defaultFiles
+          setFileList(list)
+          
+          // Concurrently fetch titles
+          const titles: Record<string, string> = {}
+          await Promise.all(
+            list.map(async (slug) => {
+              try {
+                const detail = await getChapter(projectId, slug)
+                if (detail && detail.draft) {
+                  const firstLine = detail.draft.split('\n').find(l => l.startsWith('# '))
+                  if (firstLine) {
+                    titles[slug] = firstLine.replace('# ', '').trim()
+                  }
+                }
+              } catch (e) {
+                console.error('Failed to get chapter details for sidebar:', e)
+              }
+            })
+          )
+          if (active) {
+            setChapterTitles(titles)
+          }
+        }
       } catch (err) {
         console.error('Error listing chapters:', err)
         if (active) setFileList(defaultFiles)
@@ -43,7 +83,8 @@ export default function LeftSidebar({
   }, [projectId])
 
   const handleDeleteFile = async (filename: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa tài liệu "${filename}" không? Thao tác này sẽ xóa vĩnh viễn dữ liệu trên hệ thống.`)) {
+    const confirmMsg = t('deleteDocConfirm').replace('this document', `"${filename}"`).replace('tài liệu này', `"${filename}"`);
+    if (!confirm(confirmMsg)) {
       return
     }
     const newList = fileList.filter(f => f !== filename)
@@ -57,20 +98,22 @@ export default function LeftSidebar({
     }
     try {
       await deleteChapter(projectId, filename)
-      showToast(`Đã xóa tài liệu "${filename}" thành công.`, 'success')
+      const successMsg = t('deleteDocSuccess').replace('Document', `"${filename}"`).replace('tài liệu', `"${filename}"`);
+      showToast(successMsg, 'success')
     } catch (err: any) {
-      showToast(`Lỗi khi xóa tài liệu: ${err.message}`, 'error')
+      const errMsg = `${t('deleteDocError')} ${err.message}`
+      showToast(errMsg, 'error')
       const chapters = await listChapters(projectId)
       setFileList(chapters?.length ? chapters : defaultFiles)
     }
   }
 
   const handleAddFile = async () => {
-    const filename = prompt('New document name')
+    const filename = prompt(t('newDocPrompt'))
     if (!filename?.trim()) return
     const cleanName = filename.endsWith('.md') ? filename : `${filename}.md`
     if (fileList.some(f => f.toLowerCase() === cleanName.toLowerCase())) {
-      showToast('Tài liệu với tên đó đã tồn tại.', 'warning')
+      showToast(t('docExists'), 'warning')
       return
     }
     
@@ -80,9 +123,9 @@ export default function LeftSidebar({
     
     try {
       await saveChapter(projectId, cleanName, { draft: '' })
-      showToast('Đã tạo tài liệu mới thành công.', 'success')
+      showToast(t('createDocSuccess'), 'success')
     } catch (err: any) {
-      showToast(`Lỗi khi tạo tài liệu mới: ${err.message}`, 'error')
+      showToast(`${t('createDocError')} ${err.message}`, 'error')
       const chapters = await listChapters(projectId)
       setFileList(chapters?.length ? chapters : defaultFiles)
     }
@@ -98,7 +141,7 @@ export default function LeftSidebar({
     if (!cleanName.endsWith('.md')) cleanName += '.md'
     
     if (fileList.some(f => f.toLowerCase() === cleanName.toLowerCase())) {
-      showToast('Tài liệu đã tồn tại.', 'warning')
+      showToast(t('docExists'), 'warning')
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
@@ -110,9 +153,10 @@ export default function LeftSidebar({
     try {
       await saveChapter(projectId, cleanName, { draft: '' })
       await uploadTextBulk(projectId, cleanName, 'ja', 'vi', file)
-      showToast('Đã nạp file thành công! Hệ thống đang dịch ngầm tự động. Các đoạn dịch xong sẽ dần xuất hiện ở tab "Bản dịch đã duyệt".', 'success', 6000)
+      showToast(t('uploadDocSuccess'), 'success', 6000)
     } catch (err: any) {
-      showToast(`Lỗi khi tải file: ${err.message}`, 'error')
+      const uploadErrMsg = `${t('uploadDocError')} ${err.message}`
+      showToast(uploadErrMsg, 'error')
       const chapters = await listChapters(projectId)
       setFileList(chapters?.length ? chapters : defaultFiles)
     } finally {
@@ -124,24 +168,24 @@ export default function LeftSidebar({
     <aside className="w-full h-full bg-themeSidebarWorkspace border-r border-themeBorder flex flex-col overflow-hidden">
       <div className="px-5 py-4 border-b border-themeBorder flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs text-themeMuted">Project</p>
+          <p className="text-xs text-themeMuted">{t('project')}</p>
           <h2 className="mt-1 text-sm font-semibold text-themeText truncate">{projectName}</h2>
         </div>
         {onClose && (
-          <button onClick={onClose} className="p-1.5 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard" title="Hide documents">
+          <button onClick={onClose} className="p-1.5 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard" title={t('hideSidebar')}>
             <PanelLeft size={16} />
           </button>
         )}
       </div>
 
       <div className="px-4 py-4 border-b border-themeBorder">
-        <p className="text-xs text-themeMuted">Active document</p>
-        <p className="mt-1 text-sm font-medium text-themeText truncate">{activeFile}</p>
+        <p className="text-xs text-themeMuted">{t('activeDocument')}</p>
+        <p className="mt-1 text-sm font-medium text-themeText truncate">{formatDoc(activeFile)}</p>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none px-3 py-4">
         <div className="mb-2 flex items-center justify-between px-2">
-          <h3 className="text-xs font-medium text-themeMuted">Documents</h3>
+          <h3 className="text-xs font-medium text-themeMuted">{t('sidebarDocuments')}</h3>
           <div className="flex items-center gap-1">
             <input 
               type="file" 
@@ -154,11 +198,11 @@ export default function LeftSidebar({
             <label 
               htmlFor="bulk-upload-input" 
               className="p-1 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard cursor-pointer" 
-              title="Tải file TXT lên để dịch ngầm (Bulk Translate)"
+              title={t('uploadTxtTooltip')}
             >
               <UploadCloud size={14} />
             </label>
-            <button onClick={handleAddFile} className="p-1 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard" title="New document">
+            <button onClick={handleAddFile} className="p-1 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard" title={t('createDocBtn')}>
               <Plus size={14} />
             </button>
           </div>
@@ -181,7 +225,7 @@ export default function LeftSidebar({
                   className="flex items-center gap-2 min-w-0 flex-1 text-left select-none"
                 >
                   <FileText size={14} className="shrink-0" />
-                  <span className="truncate text-sm">{file}</span>
+                  <span className="truncate text-sm">{formatDoc(file)}</span>
                 </button>
                 <button
                   onClick={(e) => {
@@ -189,7 +233,7 @@ export default function LeftSidebar({
                     handleDeleteFile(file)
                   }}
                   className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-all shrink-0"
-                  title="Xóa tài liệu"
+                  title={t('deleteDoc')}
                 >
                   <Trash2 size={13} />
                 </button>

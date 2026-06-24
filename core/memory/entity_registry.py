@@ -38,13 +38,14 @@ class Entity:
 class EntityRegistry:
     """
     Load, query, and save approved entities for one project using Cloudflare R2.
-    File lives at: projects/{project_id}/memory/entities.yaml
+    Files live at: projects/{project_id}/memory/{source_lang}_{target_lang}_entities.yaml
     Internal structure uses dictionary mapping entity_id -> Entity for O(1) access.
     """
 
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: str, source_lang: Optional[str] = None, target_lang: Optional[str] = None):
         self.project_id = project_id
-        self.r2_key = f"projects/{project_id}/memory/entities.yaml"
+        self.source_lang = source_lang.lower() if source_lang else None
+        self.target_lang = target_lang.lower() if target_lang else None
         self._entities: dict[str, Entity] = {}   # keyed by entity_id
         self._load()
 
@@ -53,22 +54,100 @@ class EntityRegistry:
     # ------------------------------------------------------------------ #
 
     def _load(self) -> None:
-        content = read_text(self.r2_key)
-        if not content:
+        from core.utils.r2 import list_files, read_text
+        import re
+        
+        if self.source_lang and self.target_lang:
+            r2_key = f"projects/{self.project_id}/memory/{self.source_lang}_{self.target_lang}_entities.yaml"
+            content = read_text(r2_key)
+            if content:
+                try:
+                    raw = yaml.safe_load(content) or []
+                    self._entities = {}
+                    for item in raw:
+                        e = Entity(**item)
+                        self._entities[e.entity_id] = e
+                    return
+                except Exception:
+                    pass
+            
+            # Legacy fallback
+            legacy_key = f"projects/{self.project_id}/memory/entities.yaml"
+            legacy_content = read_text(legacy_key)
+            if legacy_content:
+                try:
+                    raw = yaml.safe_load(legacy_content) or []
+                    self._entities = {}
+                    for item in raw:
+                        e = Entity(**item)
+                        if e.source_lang.lower() == self.source_lang and e.target_lang.lower() == self.target_lang:
+                            self._entities[e.entity_id] = e
+                    if self._entities:
+                        self.save_for_pair(self.source_lang, self.target_lang, list(self._entities.values()))
+                except Exception:
+                    self._entities = {}
+            else:
+                self._entities = {}
+        else:
+            prefix = f"projects/{self.project_id}/memory/"
+            all_files = list_files(prefix)
             self._entities = {}
-            return
-        try:
-            raw = yaml.safe_load(content) or []
-            self._entities = {}
-            for item in raw:
-                e = Entity(**item)
-                self._entities[e.entity_id] = e
-        except Exception:
-            self._entities = {}
+            loaded_pairs = set()
+            
+            for file_key in all_files:
+                filename = file_key.split("/")[-1]
+                match = re.match(r"^([a-zA-Z0-9\-]+)_([a-zA-Z0-9\-]+)_entities\.yaml$", filename)
+                if match:
+                    src_l, tgt_l = match.group(1).lower(), match.group(2).lower()
+                    loaded_pairs.add((src_l, tgt_l))
+                    content = read_text(file_key)
+                    if content:
+                        try:
+                            raw = yaml.safe_load(content) or []
+                            for item in raw:
+                                e = Entity(**item)
+                                self._entities[e.entity_id] = e
+                        except Exception:
+                            pass
+                            
+            # Legacy fallback for non-migrated
+            legacy_key = f"projects/{self.project_id}/memory/entities.yaml"
+            legacy_content = read_text(legacy_key)
+            if legacy_content:
+                try:
+                    raw = yaml.safe_load(legacy_content) or []
+                    legacy_entities = [Entity(**item) for item in raw]
+                    non_migrated = [
+                        e for e in legacy_entities 
+                        if (e.source_lang.lower(), e.target_lang.lower()) not in loaded_pairs
+                    ]
+                    if non_migrated:
+                        for e in non_migrated:
+                            self._entities[e.entity_id] = e
+                        by_pair = {}
+                        for e in non_migrated:
+                            by_pair.setdefault((e.source_lang.lower(), e.target_lang.lower()), []).append(e)
+                        for (sl, tl), entities in by_pair.items():
+                            self.save_for_pair(sl, tl, entities)
+                except Exception:
+                    pass
 
     def save(self) -> None:
-        data = [asdict(e) for e in self._entities.values()]
-        write_text(self.r2_key, yaml.dump(data, allow_unicode=True, sort_keys=False))
+        if self.source_lang and self.target_lang:
+            self.save_for_pair(self.source_lang, self.target_lang, list(self._entities.values()))
+        else:
+            by_pair = {}
+            for e in self._entities.values():
+                key = (e.source_lang.lower(), e.target_lang.lower())
+                by_pair.setdefault(key, []).append(e)
+                
+            for (sl, tl), entities in by_pair.items():
+                self.save_for_pair(sl, tl, entities)
+
+    def save_for_pair(self, source_lang: str, target_lang: str, entities: list[Entity]) -> None:
+        r2_key = f"projects/{self.project_id}/memory/{source_lang.lower()}_{target_lang.lower()}_entities.yaml"
+        data = [asdict(e) for e in entities]
+        write_text(r2_key, yaml.dump(data, allow_unicode=True, sort_keys=False))
 
     # ------------------------------------------------------------------ #
     # Write                                                                #
@@ -77,12 +156,27 @@ class EntityRegistry:
     def add_entity(self, entity: Entity) -> None:
         """Add or overwrite entity by entity_id. Human approval expected before calling."""
         self._entities[entity.entity_id] = entity
-        self.save()
+        
+        pair_entities = [
+            e for e in self._entities.values()
+            if e.source_lang.lower() == entity.source_lang.lower()
+            and e.target_lang.lower() == entity.target_lang.lower()
+        ]
+        self.save_for_pair(entity.source_lang, entity.target_lang, pair_entities)
 
     def remove_entity(self, entity_id: str) -> bool:
         if entity_id in self._entities:
+            entity = self._entities[entity_id]
+            source_lang = entity.source_lang
+            target_lang = entity.target_lang
             del self._entities[entity_id]
-            self.save()
+            
+            pair_entities = [
+                e for e in self._entities.values()
+                if e.source_lang.lower() == source_lang.lower()
+                and e.target_lang.lower() == target_lang.lower()
+            ]
+            self.save_for_pair(source_lang, target_lang, pair_entities)
             return True
         return False
 

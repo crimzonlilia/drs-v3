@@ -16,9 +16,11 @@ import {
   ArrowLeft,
   Plus,
   Moon,
-  Sun
+  Sun,
+  Globe
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
+import { useLanguage } from '@/app/i18n'
 import { listChapters, getProject, getChapter, saveChapter, ProjectInfo } from '@/app/api-client'
 import { showToast } from '@/components/toast'
 import { useEffect } from 'react'
@@ -37,6 +39,7 @@ interface PageProps {
 export default function ProjectDetails({ params }: PageProps) {
   const { projectId } = use(params)
   const { theme, toggleTheme } = useTheme()
+  const { language, setLanguage, t } = useLanguage()
   const [searchQuery, setSearchQuery] = useState('')
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
@@ -47,54 +50,58 @@ export default function ProjectDetails({ params }: PageProps) {
   const [isCreating, setIsCreating] = useState(false)
   const [activeModal, setActiveModal] = useState<'shared' | 'settings' | null>(null)
 
-  useEffect(() => {
-    let active = true;
-    async function loadData() {
-      try {
-        const info = await getProject(projectId);
-        if (active) {
-          setProjectInfo(info);
-        }
-      } catch (err) {
-        console.error('Error loading project details info:', err);
-      }
-
-      try {
-        const slugs = await listChapters(projectId);
-        if (!active) return;
-        const list = await Promise.all(
-          slugs.map(async (slug) => {
-            try {
-              const data = await getChapter(projectId, slug);
-              const preview = data.draft ? data.draft.slice(0, 100) : "No draft content yet.";
-              return {
-                slug,
-                title: slug,
-                previewText: preview,
-                updatedAt: 'Just now'
-              };
-            } catch (e) {
-              return {
-                slug,
-                title: slug,
-                previewText: "Start editing translation...",
-                updatedAt: 'Just now'
-              };
-            }
-          })
-        );
-        if (active) {
-          setChapters(list);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Error loading project chapters:', err);
-        if (active) setLoading(false);
-      }
+  const loadData = async () => {
+    try {
+      const info = await getProject(projectId);
+      setProjectInfo(info);
+    } catch (err) {
+      console.error('Error loading project details info:', err);
     }
 
+    try {
+      const slugs = await listChapters(projectId);
+      const list = await Promise.all(
+        slugs.map(async (slug) => {
+          try {
+            const data = await getChapter(projectId, slug);
+            
+            // Extract the first heading of the draft as the title (fallback to slug if not present)
+            const titleMatch = data.draft ? data.draft.match(/^#\s+(.+)$/m) : null;
+            const title = titleMatch ? titleMatch[1].trim() : slug;
+            
+            // Extract a clean preview by removing the heading line
+            let preview = language === 'en' ? "Empty translation..." : "Bản dịch trống...";
+            if (data.draft) {
+              const withoutTitle = data.draft.replace(/^#\s+.+$/m, '').trim();
+              preview = withoutTitle ? withoutTitle.slice(0, 120) : (language === 'en' ? "Empty translation..." : "Bản dịch trống...");
+            }
+
+            return {
+              slug,
+              title,
+              previewText: preview,
+              updatedAt: language === 'en' ? 'Just now' : 'Vừa xong'
+            };
+          } catch (e) {
+            return {
+              slug,
+              title: slug,
+              previewText: language === 'en' ? "Start editing translation..." : "Bắt đầu chỉnh sửa bản dịch...",
+              updatedAt: language === 'en' ? 'Just now' : 'Vừa xong'
+            };
+          }
+        })
+      );
+      setChapters(list);
+      setLoading(false);
+    } catch (err) {
+      console.error('Error loading project chapters:', err);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadData();
-    return () => { active = false; };
   }, [projectId]);
 
   const generateNextChapterId = (existingChapters: Chapter[]) => {
@@ -120,29 +127,30 @@ export default function ProjectDetails({ params }: PageProps) {
 
   const handleSubmitChapter = async () => {
     if (!newChapterTitle.trim()) {
-      showToast('Vui lòng nhập tiêu đề tài liệu.', 'warning');
+      showToast(t('enterDocTitleWarning'), 'warning');
       return;
     }
 
     setIsCreating(true);
     try {
       const nextId = generateNextChapterId(chapters);
-      const content = `# ${newChapterTitle.trim()}\n\nBắt đầu bản dịch mới tại đây...`;
+      const content = `# ${newChapterTitle.trim()}\n\n${language === 'en' ? 'Start editing translation...' : 'Bắt đầu bản dịch mới tại đây...'}`;
       await saveChapter(projectId, nextId, { draft: content });
       
       setIsModalOpen(false);
       setNewChapterTitle('');
       setNewChapterType('text');
       
-      window.location.reload();
+      await loadData();
+      showToast(t('createDocSuccess'), 'success');
     } catch (err) {
-      showToast(`Không thể tạo tài liệu mới: ${err}`, 'error');
+      showToast(`${t('createDocError')} ${err}`, 'error');
     } finally {
       setIsCreating(false);
     }
   };
 
-  const projectName = projectInfo ? (projectInfo.project_id === 'demo_project' ? 'Dự án Dịch thuật' : projectInfo.project_id) : projectId
+  const projectName = projectInfo ? (projectInfo.description || (projectInfo.project_id === 'demo_project' ? 'Dự án Dịch thuật' : projectInfo.project_id)) : projectId
 
   const filteredChapters = chapters.filter(c => 
     c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -171,7 +179,7 @@ export default function ProjectDetails({ params }: PageProps) {
                 <path d="M6 22C6 11 35 3.5 85 3.5C135 3.5 164 11 164 22C164 33 135 41.5 85 41.5C35 41.5 6 33 6 22Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <Home size={18} className="text-white" />
-              <span>My work</span>
+              <span>{t('selectProject')}</span>
             </Link>
 
             <div 
@@ -179,7 +187,7 @@ export default function ProjectDetails({ params }: PageProps) {
               className="py-2 px-3 flex items-center gap-3 hover:text-white cursor-pointer transition-colors"
             >
               <Users size={18} />
-              <span>Shared w/ me</span>
+              <span>{language === 'en' ? 'Shared with me' : 'Được chia sẻ'}</span>
             </div>
 
             <div 
@@ -187,13 +195,22 @@ export default function ProjectDetails({ params }: PageProps) {
               className="py-2 px-3 flex items-center gap-3 hover:text-white cursor-pointer transition-colors"
             >
               <Settings size={18} />
-              <span>Settings</span>
+              <span>{t('sidebarSettings')}</span>
             </div>
           </nav>
         </div>
 
         {/* Sidebar Footer */}
-        <div className="space-y-4">
+        <div className="space-y-3">
+          <button
+            onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')}
+            className="flex items-center gap-3 py-2 px-3 w-full hover:text-white transition-colors text-left"
+            title="Switch Language"
+          >
+            <Globe size={18} className="text-accent-purple dark:text-accent-violet" />
+            <span>{language === 'en' ? 'Tiếng Việt' : 'English'}</span>
+          </button>
+
           <button
             onClick={toggleTheme}
             className="flex items-center gap-3 py-2 px-3 w-full hover:text-white transition-colors text-left"
@@ -201,12 +218,12 @@ export default function ProjectDetails({ params }: PageProps) {
             {theme === 'light' ? (
               <>
                 <Moon size={18} />
-                <span>Dark Mode</span>
+                <span>{t('themeDark')}</span>
               </>
             ) : (
               <>
                 <Sun size={18} className="text-accent-cyan" />
-                <span>Light Mode</span>
+                <span>{t('themeLight')}</span>
               </>
             )}
           </button>
@@ -256,7 +273,7 @@ export default function ProjectDetails({ params }: PageProps) {
               className="ml-2 px-4 py-1.5 bg-slate-950 hover:bg-slate-850 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
             >
               <Plus size={14} />
-              New
+              {t('createDocBtn')}
             </button>
           </div>
 
@@ -266,7 +283,7 @@ export default function ProjectDetails({ params }: PageProps) {
               <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search chapters..."
+                placeholder={t('searchDocs')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-1.5 w-48 bg-slate-200/40 dark:bg-slate-800/30 border border-slate-300/40 dark:border-slate-700/40 rounded-full text-xs focus:w-64 focus:border-accent-purple/50 focus:outline-none transition-all duration-300"
@@ -285,43 +302,58 @@ export default function ProjectDetails({ params }: PageProps) {
 
         {/* Chapters Cards Grid Container - Scrollable */}
         <div className="flex-1 overflow-y-auto p-8 max-w-5xl w-full mx-auto">
-          {loading && (
-            <div className="pt-4 text-sm text-themeMuted">Loading documents...</div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
-            {filteredChapters.map((chapter) => (
-              <div 
-                key={chapter.slug} 
-                className="relative bg-themeCard border border-themeBorder rounded-2xl p-5 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-slate-350 dark:hover:border-slate-750 transition-all duration-200 min-h-[160px]"
-              >
-                {/* Chapter Title & Action Button */}
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <Link href={`/dashboard/${projectId}/${chapter.slug}`} className="block flex-1 group">
-                    <span className="text-[10px] font-bold text-accent-purple dark:text-accent-violet uppercase tracking-wider block mb-1">
-                      {chapter.title}
-                    </span>
-                    <h2 className="text-base font-serif leading-relaxed text-slate-800 dark:text-slate-200 group-hover:text-accent-purple dark:group-hover:text-accent-violet transition-colors line-clamp-2">
-                      "{chapter.previewText}..."
-                    </h2>
-                  </Link>
-                  <button className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors text-slate-400 dark:text-slate-500 shrink-0">
-                    <MoreHorizontal size={16} />
-                  </button>
-                </div>
-
-                {/* Updated Timestamp at Bottom */}
-                <div className="flex items-center justify-between text-[11px] text-slate-400 mt-auto pt-4 border-t border-slate-100/50 dark:border-slate-800/20">
-                  <div className="flex items-center gap-1">
-                    <Clock size={12} className="text-slate-300 dark:text-slate-600" />
-                    <span>{chapter.updatedAt}</span>
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4 animate-pulse select-none">
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <div key={n} className="bg-themeCard/60 border border-themeBorder/40 rounded-2xl p-5 flex flex-col justify-between min-h-[160px]">
+                  <div className="space-y-3">
+                    <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded-md w-3/4 animate-pulse"></div>
+                    <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded-md w-full animate-pulse"></div>
+                    <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded-md w-5/6 animate-pulse"></div>
                   </div>
-                  <Link href={`/dashboard/${projectId}/${chapter.slug}`} className="px-3 py-1 bg-accent-purple/10 hover:bg-accent-purple/20 text-accent-purple dark:text-accent-violet rounded-full font-semibold transition-all">
-                    Dịch →
-                  </Link>
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t border-themeBorder/30">
+                    <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded-md w-1/4 animate-pulse"></div>
+                    <div className="h-6 bg-slate-200 dark:bg-slate-800 rounded-full w-1/4 animate-pulse"></div>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
+              {filteredChapters.map((chapter) => (
+                <div 
+                  key={chapter.slug} 
+                  className="relative bg-themeCard border border-themeBorder rounded-2xl p-5 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-slate-350 dark:hover:border-slate-750 transition-all duration-200 min-h-[160px]"
+                >
+                  {/* Chapter Title & Action Button */}
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <Link href={`/dashboard/${projectId}/${chapter.slug}`} className="block flex-1 group">
+                      <h2 className="text-base font-serif font-semibold leading-relaxed text-slate-800 dark:text-slate-200 group-hover:text-accent-purple dark:group-hover:text-accent-violet transition-colors line-clamp-1 mb-1.5">
+                        {chapter.title}
+                      </h2>
+                      <p className="text-xs text-themeMuted line-clamp-2 leading-relaxed">
+                        {chapter.previewText}
+                      </p>
+                    </Link>
+                    <button className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors text-slate-400 dark:text-slate-500 shrink-0">
+                      <MoreHorizontal size={16} />
+                    </button>
+                  </div>
+
+                  {/* Updated Timestamp at Bottom */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 mt-auto pt-4 border-t border-slate-100/50 dark:border-slate-800/20">
+                    <div className="flex items-center gap-1">
+                      <Clock size={12} className="text-slate-300 dark:text-slate-600" />
+                      <span>{chapter.updatedAt}</span>
+                    </div>
+                    <Link href={`/dashboard/${projectId}/${chapter.slug}`} className="px-3 py-1 bg-accent-purple/10 hover:bg-accent-purple/20 text-accent-purple dark:text-accent-violet rounded-full font-semibold transition-all">
+                      {t('translateCTA')} →
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
 
@@ -329,66 +361,22 @@ export default function ProjectDetails({ params }: PageProps) {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-themeCard border border-themeBorder rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in text-themeText">
-            <h3 className="text-xl font-serif font-bold mb-4">Create New Document</h3>
+            <h3 className="text-xl font-serif font-bold mb-4">{t('createNewDocTitle')}</h3>
             
             <div className="space-y-4">
               {/* Title Input */}
               <div>
                 <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
-                  Document / Chapter Title
+                  {t('docTitleLabel')}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Chapter 4: The Revelation"
+                  placeholder={t('docPlaceholder')}
                   value={newChapterTitle}
                   onChange={(e) => setNewChapterTitle(e.target.value)}
                   className="w-full px-4 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-sm focus:border-accent-purple/50 focus:outline-none transition-colors"
                 />
               </div>
-
-              {/* Type Selection */}
-              <div>
-                <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
-                  Type
-                </label>
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Text Option */}
-                  <div 
-                    onClick={() => setNewChapterType('text')}
-                    className={`p-4 border rounded-xl cursor-pointer transition-all ${
-                      newChapterType === 'text' 
-                        ? 'border-accent-purple bg-accent-purple/5' 
-                        : 'border-themeBorder hover:border-accent-purple/20'
-                    }`}
-                  >
-                    <span className="text-sm font-bold block mb-1">Text (Chữ)</span>
-                    <span className="text-xs text-themeMuted">Documents, articles, books</span>
-                  </div>
-
-                  {/* Image Option */}
-                  <div 
-                    onClick={() => setNewChapterType('image')}
-                    className={`p-4 border rounded-xl cursor-pointer transition-all relative ${
-                      newChapterType === 'image' 
-                        ? 'border-accent-purple bg-accent-purple/5' 
-                        : 'border-themeBorder hover:border-accent-purple/20'
-                    }`}
-                  >
-                    <span className="text-sm font-bold block mb-1">Image (Ảnh)</span>
-                    <span className="text-xs text-themeMuted">Scans, presentations, screenshots, etc.</span>
-                    <span className="absolute top-2 right-2 text-[9px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded uppercase">
-                      Soon
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Warning/Notice for Image Type */}
-              {newChapterType === 'image' && (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-500 rounded-xl text-xs leading-relaxed">
-                  <strong>Notice:</strong> Image translation mode is currently under development. Creating this will set up a placeholder translation workspace.
-                </div>
-              )}
             </div>
 
             <div className="flex items-center justify-end gap-3 mt-6">
@@ -396,14 +384,14 @@ export default function ProjectDetails({ params }: PageProps) {
                 onClick={() => setIsModalOpen(false)}
                 className="px-4 py-2 hover:bg-themeBg rounded-xl text-sm font-medium transition-colors"
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 onClick={handleSubmitChapter}
                 disabled={isCreating}
                 className="px-5 py-2 bg-accent-purple hover:bg-accent-purple/90 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-colors"
               >
-                {isCreating ? 'Creating...' : 'Create'}
+                {isCreating ? t('creating') : t('create')}
               </button>
             </div>
           </div>

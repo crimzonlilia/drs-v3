@@ -21,10 +21,12 @@ async def google_translate(text: str, source_lang: str, target_lang: str) -> str
         return ""
     try:
         url = "https://translate.googleapis.com/translate_a/single"
+        sl = "auto" if source_lang in ("multi", "auto") else source_lang
+        tl = "vi" if target_lang in ("multi", "auto") else target_lang
         params = {
             "client": "gtx",
-            "sl": source_lang,
-            "tl": target_lang,
+            "sl": sl,
+            "tl": tl,
             "dt": "t",
             "q": text
         }

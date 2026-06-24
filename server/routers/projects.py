@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 
 from core.memory import ProjectMemory
@@ -130,6 +130,7 @@ async def get_project(project_id: str, current_user: dict = Depends(get_current_
 
     return ProjectInfo(
         project_id=proj["id"],
+        description=proj.get("description", ""),
         source_lang=proj["source_lang"],
         target_lang=proj["target_lang"],
         content_type=proj["content_type"],
@@ -246,6 +247,7 @@ async def save_doc_content(
     doc_id: Optional[str] = None,
     chapter_id: Optional[str] = None,
     payload: dict = None,
+    background_tasks: BackgroundTasks = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -321,6 +323,16 @@ async def save_doc_content(
             current_user["id"],
             latest_meta["approved_at"]
         ])
+
+        # Index approved content into knowledge_base in background
+        if background_tasks:
+            from core.utils.kb_service import index_document_in_kb
+            background_tasks.add_task(
+                index_document_in_kb,
+                project_id,
+                actual_doc_id,
+                approved_content
+            )
         
     return {"status": "success", "message": "Document saved successfully"}
 
@@ -540,3 +552,163 @@ async def download_font(
         media_type=media_type,
         headers={"Content-Disposition": f"inline; filename={font_name}"}
     )
+
+
+# ------------------------------------------------------------------ #
+# Chapter Summarization & Knowledge Base Endpoints                  #
+# ------------------------------------------------------------------ #
+
+@router.post("/{project_id}/docs/{doc_id}/summarize")
+async def summarize_chapter(
+    project_id: str,
+    doc_id: str,
+    payload: dict = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Generate a 2-3 sentence summary draft for the chapter translation.
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    payload = payload or {}
+    text_content = payload.get("text", "")
+    
+    # If text is not supplied, load it from R2
+    if not text_content:
+        doc_prefix = f"projects/{project_id}/docs/{doc_id}/"
+        # Try metadata / translation output first
+        meta_content = read_text(f"{doc_prefix}outputs/metadata.json")
+        if meta_content:
+            try:
+                meta = json.loads(meta_content)
+                v = meta.get("latest_version", 1)
+                translation_content = read_text(f"{doc_prefix}outputs/translation_v{v}.json")
+                if translation_content:
+                    out = json.loads(translation_content)
+                    text_content = out.get("approved_text", "")
+            except Exception:
+                pass
+        
+        # Fallback to draft or segments
+        if not text_content:
+            text_content = read_text(f"{doc_prefix}draft.md") or ""
+
+    if not text_content.strip():
+        raise HTTPException(status_code=400, detail="No translation text available to summarize")
+
+    # Call LLM to summarize
+    from core.agents.candidate_generator import CandidateGenerator
+    from core.memory import ProjectMemory
+    
+    # Instantiate with dummy ProjectMemory
+    proj_mem = ProjectMemory(project_id, "ja", "vi")
+    async with CandidateGenerator(proj_mem) as generator:
+        system_prompt = (
+            "You are a professional editor. Summarize the following chapter translation in exactly 2 to 3 concise Vietnamese sentences. "
+            "Focus only on key plot events, character developments, and major changes. Do not include introductory phrases like 'Chương này kể về...'. "
+            "Write the summary directly in Vietnamese."
+        )
+        summary = await generator.chat(system_prompt=system_prompt, message=text_content)
+        
+    return {"summary": summary.strip()}
+
+
+@router.post("/{project_id}/docs/{doc_id}/save-summary")
+async def save_chapter_summary(
+    project_id: str,
+    doc_id: str,
+    payload: dict = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Saves or updates the chapter summary in D1.
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    payload = payload or {}
+    summary_text = payload.get("summary", "").strip()
+    if not summary_text:
+        raise HTTPException(status_code=400, detail="Summary text cannot be empty")
+        
+    sql = """
+    INSERT OR REPLACE INTO chapter_summaries (project_id, chapter_id, summary_text, created_at)
+    VALUES (?, ?, ?, ?)
+    """
+    await execute_query(sql, [
+        project_id,
+        doc_id,
+        summary_text,
+        datetime.now().isoformat()
+    ])
+    
+    return {"status": "success", "message": "Chapter summary saved successfully"}
+
+
+@router.post("/{project_id}/kb/upload")
+async def upload_reference_doc(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Upload a text document, chunk it, and save chunks + embeddings to D1.
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    # Read text content
+    contents = await file.read()
+    try:
+        text = contents.decode("utf-8")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Only UTF-8 encoded text files are supported")
+        
+    doc_id = file.filename or f"doc_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    # Trigger background indexing
+    from core.utils.kb_service import index_document_in_kb
+    background_tasks.add_task(
+        index_document_in_kb,
+        project_id,
+        doc_id,
+        text
+    )
+    
+    return {"status": "success", "doc_id": doc_id, "message": "Document uploaded and indexing started in the background"}
+
+
+@router.get("/{project_id}/kb/list")
+async def list_kb_documents(
+    project_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Lists unique document IDs currently indexed in the project's knowledge base.
+    """
+    await verify_project_member(project_id, current_user["id"], "viewer")
+    
+    rows = await execute_query(
+        "SELECT DISTINCT doc_id FROM knowledge_base WHERE project_id = ? ORDER BY doc_id ASC",
+        [project_id]
+    )
+    docs = [r["doc_id"] for r in rows]
+    return {"documents": docs}
+
+
+@router.delete("/{project_id}/kb/delete/{doc_id}")
+async def delete_kb_document(
+    project_id: str,
+    doc_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Deletes all chunks and embeddings for the given document from the knowledge base.
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    await execute_query(
+        "DELETE FROM knowledge_base WHERE project_id = ? AND doc_id = ?",
+        [project_id, doc_id]
+    )
+    return {"status": "success", "message": f"Document '{doc_id}' successfully deleted from knowledge base"}
+

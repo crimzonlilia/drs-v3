@@ -5,6 +5,7 @@ import TopNavigation from '@/components/TopNavigation'
 import LeftSidebar from '@/components/LeftSidebar'
 import CenterPanel from '@/components/CenterPanel'
 import { listChapters, getProject, ProjectInfo } from '@/app/api-client'
+import { useLanguage } from '@/app/i18n'
 
 interface PageProps {
   params: Promise<{ projectId: string; docId: string }>
@@ -12,6 +13,7 @@ interface PageProps {
 
 export default function ChapterWorkspace({ params }: PageProps) {
   const { projectId, docId } = use(params)
+  const { language, setLanguage, t } = useLanguage()
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
   
   // Format document name for display, e.g. "chapter1" -> "Chapter 1"
@@ -24,7 +26,7 @@ export default function ChapterWorkspace({ params }: PageProps) {
   }
   
   const docName = formatDoc(docId)
-  const projectName = projectInfo ? (projectInfo.project_id === 'demo_project' ? 'Sample Document' : projectInfo.project_id) : projectId
+  const projectName = projectInfo ? (projectInfo.description || (projectInfo.project_id === 'demo_project' ? 'Sample Document' : projectInfo.project_id)) : projectId
   const displayTitle = `${projectName} / ${docName}`
 
   const [currentProject, setCurrentProject] = useState(displayTitle)
@@ -44,7 +46,7 @@ export default function ChapterWorkspace({ params }: PageProps) {
         const info = await getProject(projectId);
         if (active && info) {
           setProjectInfo(info);
-          const pName = info.project_id === 'demo_project' ? 'Sample Document' : info.project_id;
+          const pName = info.description || (info.project_id === 'demo_project' ? 'Sample Document' : info.project_id);
           setCurrentProject(`${pName} / ${formatDoc(docId)}`);
         }
       } catch (err) {

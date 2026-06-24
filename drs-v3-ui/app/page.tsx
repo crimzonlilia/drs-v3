@@ -65,7 +65,7 @@ export default function Home() {
             Explore Dashboard
             <ArrowRight size={18} />
           </Link>
-          <Link href="/dashboard" className="px-8 py-4 glass border border-themeBorder rounded-xl text-base font-semibold hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors text-themeText">
+          <Link href="/login?mode=register" className="px-8 py-4 glass border border-themeBorder rounded-xl text-base font-semibold hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors text-themeText">
             Join for free
           </Link>
         </div>

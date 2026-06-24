@@ -16,26 +16,44 @@ from .entity_registry import EntityRegistry, Entity
 import yaml
 from core.utils.r2 import read_text, write_text
 
+from typing import Optional
+
 class ProjectMemory:
     """
     Convenience wrapper: one object, all memory stores for a project.
     All stores use Cloudflare R2 (or local mock) as persistence.
     """
 
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: str, source_lang: Optional[str] = None, target_lang: Optional[str] = None):
         self.project_id = project_id
-        self.glossary = Glossary(project_id)
-        self.style = StyleMemory(project_id)
-        self.entities = EntityRegistry(project_id)
+        
+        # Load default project languages if not specified
+        if not source_lang or not target_lang:
+            from core.utils.r2 import _run_db_query_sync
+            rows = _run_db_query_sync("SELECT source_lang, target_lang FROM projects WHERE id = ?", [project_id])
+            if rows:
+                source_lang = source_lang or rows[0].get("source_lang")
+                target_lang = target_lang or rows[0].get("target_lang")
+                
+        self.source_lang = (source_lang or "ja").lower()
+        self.target_lang = (target_lang or "vi").lower()
+        
+        self.glossary = Glossary(project_id, self.source_lang, self.target_lang)
+        self.style = StyleMemory(project_id, self.source_lang, self.target_lang)
+        self.entities = EntityRegistry(project_id, self.source_lang, self.target_lang)
 
     def load_style_corrections(self) -> list:
         """
         Loads style corrections from R2.
         """
-        path = f"projects/{self.project_id}/memory/style_corrections.yaml"
+        path = f"projects/{self.project_id}/memory/{self.source_lang}_{self.target_lang}_style_corrections.yaml"
         content = read_text(path)
         if not content:
-            return []
+            # Fallback to legacy
+            legacy_path = f"projects/{self.project_id}/memory/style_corrections.yaml"
+            content = read_text(legacy_path)
+            if not content:
+                return []
         try:
             return yaml.safe_load(content) or []
         except Exception:
@@ -45,7 +63,7 @@ class ProjectMemory:
         """
         Saves style corrections to R2.
         """
-        path = f"projects/{self.project_id}/memory/style_corrections.yaml"
+        path = f"projects/{self.project_id}/memory/{self.source_lang}_{self.target_lang}_style_corrections.yaml"
         write_text(path, yaml.dump(corrections, allow_unicode=True, sort_keys=False))
 
     def add_style_correction(

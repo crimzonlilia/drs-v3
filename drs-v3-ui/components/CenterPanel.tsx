@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { showToast } from './toast'
+import { useLanguage } from '@/app/i18n'
 import {
   Download,
   PanelLeft,
@@ -16,7 +17,10 @@ import {
   Edit3,
   Paperclip,
   Type,
-  Upload
+  Upload,
+  ChevronDown,
+  Search,
+  Globe
 } from 'lucide-react'
 import {
   approveTranslation,
@@ -38,7 +42,9 @@ import {
   sendGeneralChat,
   upsertChatMessage,
   getChatHistory,
-  deleteChatMessage
+  deleteChatMessage,
+  getChapterSummary,
+  saveChapterSummary
 } from '@/app/api-client'
 
 import PipelineTracker from './PipelineTracker'
@@ -214,11 +220,24 @@ interface CenterPanelProps {
 }
 
 const languages = [
-  ['ja', 'Japanese'],
-  ['vi', 'Vietnamese'],
-  ['en', 'English'],
-  ['zh', 'Chinese'],
-  ['ko', 'Korean']
+  ['ja', '日本語 (Japanese)'],
+  ['vi', 'Tiếng Việt (Vietnamese)'],
+  ['en', 'English (English)'],
+  ['zh', '中文 (Chinese)'],
+  ['ko', '한국어 (Korean)'],
+  ['lo', 'ພາສາລາວ (Lao)'],
+  ['es', 'Español (Spanish)'],
+  ['fr', 'Français (French)'],
+  ['de', 'Deutsch (German)'],
+  ['it', 'Italiano (Italian)'],
+  ['ru', 'Русский (Russian)'],
+  ['pt', 'Português (Portuguese)'],
+  ['th', 'ไทย (Thai)'],
+  ['id', 'Bahasa Indonesia (Indonesian)'],
+  ['ms', 'Bahasa Melayu (Malay)'],
+  ['ar', 'العربية (Arabic)'],
+  ['hi', 'हिन्दी (Hindi)'],
+  ['tl', 'Tagalog (Filipino)']
 ] as const
 
 export default function CenterPanel({
@@ -229,6 +248,7 @@ export default function CenterPanel({
   onStepChange,
   setPipelineStep
 }: CenterPanelProps) {
+  const { language, t } = useLanguage()
   const [original, setOriginal] = useState('')
   const [translation, setTranslation] = useState('')
   const [sourceLang] = useState('ja')
@@ -236,6 +256,39 @@ export default function CenterPanel({
   const [isTranslating, setIsTranslating] = useState(false)
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'failed'>('saved')
   const [isEditingOriginal, setIsEditingOriginal] = useState(false)
+  const [loadedTitle, setLoadedTitle] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoadedTitle(null)
+  }, [activeFile])
+
+  const docTitle = useMemo(() => {
+    if (loadedTitle) return loadedTitle
+    if (!activeFile) return ''
+    const clean = activeFile.replace(/\.md$/, '').replace(/_draft$/, '').replace(/_review$/, '').replace(/_final$/, '')
+    const match = clean.match(/^ch(\d+)$/i)
+    if (match) {
+      return language === 'en' ? `Document ${parseInt(match[1], 10)}` : `Tài liệu ${parseInt(match[1], 10)}`
+    }
+    return clean.charAt(0).toUpperCase() + clean.slice(1)
+  }, [activeFile, language, loadedTitle])
+
+  // Custom searchable language dropdown state
+  const [isLangOpen, setIsLangOpen] = useState(false)
+  const [langQuery, setLangQuery] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsLangOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
 
   // Chat Timeline States
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -267,6 +320,42 @@ export default function CenterPanel({
   const [isImageDoc, setIsImageDoc] = useState(false)
   const [inspectedMsgId, setInspectedMsgId] = useState<string | null>(null)
   const [approvingMsgId, setApprovingMsgId] = useState<string | null>(null)
+  const [chatLanguage, setChatLanguage] = useState<string>(language || 'vi')
+
+  const [summaryModal, setSummaryModal] = useState<{
+    isOpen: boolean
+    docId: string
+    summary: string
+    loading: boolean
+  }>({
+    isOpen: false,
+    docId: '',
+    summary: '',
+    loading: false
+  })
+
+  const triggerSummaryModal = async () => {
+    if (!activeFile) return
+    setSummaryModal({
+      isOpen: true,
+      docId: activeFile,
+      summary: '',
+      loading: true
+    })
+    try {
+      const res = await getChapterSummary(projectId, activeFile)
+      setSummaryModal(prev => ({ ...prev, summary: res.summary, loading: false }))
+    } catch (err) {
+      console.error(err)
+      setSummaryModal(prev => ({ ...prev, loading: false }))
+    }
+  }
+
+  useEffect(() => {
+    if (language) {
+      setChatLanguage(language)
+    }
+  }, [language])
 
   // Font manager states
   const [availableFonts, setAvailableFonts] = useState<string[]>([])
@@ -355,6 +444,24 @@ export default function CenterPanel({
         setTranslation(targetText)
         setPipelineStep('idle')
         onStepChange('read')
+
+        let titleVal = ''
+        if (data.draft) {
+          const firstLine = data.draft.split('\n').find((l: string) => l.startsWith('# '))
+          if (firstLine) {
+            titleVal = firstLine.replace('# ', '').trim()
+          }
+        }
+        if (!titleVal) {
+          const clean = activeFile.replace(/\.md$/, '').replace(/_draft$/, '').replace(/_review$/, '').replace(/_final$/, '')
+          const match = clean.match(/^ch(\d+)$/i)
+          if (match) {
+            titleVal = language === 'en' ? `Document ${parseInt(match[1], 10)}` : `Tài liệu ${parseInt(match[1], 10)}`
+          } else {
+            titleVal = clean.charAt(0).toUpperCase() + clean.slice(1)
+          }
+        }
+        setLoadedTitle(titleVal || null)
         
         // Detect if active file is an image file (manga, comic, scan)
         const isImg = activeFile.toLowerCase().endsWith('.png') ||
@@ -393,7 +500,9 @@ export default function CenterPanel({
             {
               id: 'welcome',
               sender: 'ai',
-              text: `Chào mừng bạn đến với **Localization Workspace** cho tài liệu **${activeFile}**. Bạn có thể gửi yêu cầu dịch văn bản hoặc đính kèm ảnh manga/comic để dịch trực tiếp trong luồng chat này.`,
+              text: language === 'en'
+                ? `Welcome to the **Localization Workspace** for document **${titleVal || activeFile}**. You can submit translation requests or attach manga/comic images to translate directly in this chat thread.`
+                : `Chào mừng bạn đến với **Localization Workspace** cho tài liệu **${titleVal || activeFile}**. Bạn có thể gửi yêu cầu dịch văn bản hoặc đính kèm ảnh manga/comic để dịch trực tiếp trong luồng chat này.`,
               status: 'done',
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }
@@ -713,7 +822,7 @@ export default function CenterPanel({
           content: m.text
         }))
         
-      const res = await sendGeneralChat(projectId, activeFile, promptText, aiMsg.id, history)
+      const res = await sendGeneralChat(projectId, activeFile, promptText, aiMsg.id, history, chatLanguage)
       
       setChatMessages(prev => prev.map(m => m.id === aiMsg.id ? {
         ...m,
@@ -726,7 +835,7 @@ export default function CenterPanel({
       setChatMessages(prev => prev.map(m => m.id === aiMsg.id ? {
         ...m,
         status: 'failed',
-        text: `Không thể kết nối với trợ lý: ${err.message || 'Lỗi kết nối'}`
+        text: `${t('chatConnectionError')}: ${err.message || 'Error'}`
       } : m))
     } finally {
       setIsTranslating(false)
@@ -890,6 +999,9 @@ export default function CenterPanel({
       // Update preview to rendered image
       setMangaViewModes(prev => ({ ...prev, [assetId]: 'rendered' }))
       showToast('Đã phê duyệt và vẽ dịch thành công!', 'success')
+      
+      // Auto-trigger Chapter summary modal
+      triggerSummaryModal()
     } catch (err: any) {
       showToast(`Lỗi phê duyệt và vẽ dịch: ${err.message}`, 'error')
       setPipelineStatus(prev => ({ ...prev, render: 'failed' }))
@@ -909,6 +1021,9 @@ export default function CenterPanel({
         approve: 'success' 
       }))
       showToast('Đã duyệt bản dịch thành công!', 'success')
+      
+      // Auto-trigger Chapter summary modal
+      triggerSummaryModal()
     } catch (err: any) {
       showToast(`Lỗi khi duyệt bản dịch: ${err.message}`, 'error')
     } finally {
@@ -1033,9 +1148,9 @@ export default function CenterPanel({
             </button>
           )}
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-slate-850 dark:text-slate-200 truncate">{activeFile}</h1>
+            <h1 className="text-sm font-semibold text-slate-850 dark:text-slate-200 truncate">{docTitle}</h1>
             <p className="text-xs text-slate-400 truncate">
-              {pipelineStatus.review === 'running' ? 'Review & approve the localization drafts below.' : 'Submit a text translation prompt or upload a manga/comic image.'}
+              {pipelineStatus.review === 'running' ? t('workspaceReviewText') : t('workspaceIntroText')}
             </p>
           </div>
         </div>
@@ -1071,7 +1186,7 @@ export default function CenterPanel({
             <label
               htmlFor="font-upload-input"
               className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer text-slate-400 hover:text-slate-600 transition-colors"
-              title="Tải font custom lên (.ttf/.otf)"
+              title={t('uploadFontTooltip')}
             >
               <Upload size={12} />
             </label>
@@ -1085,20 +1200,20 @@ export default function CenterPanel({
                 ? 'border-indigo-500 bg-indigo-500/5 text-indigo-600 dark:text-indigo-400' 
                 : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900'
             }`}
-            title="Xem tổng hợp bản dịch và bản gốc"
+            title={t('viewBilingualTooltip')}
           >
             <BookOpen size={13} />
-            <span>Bản dịch & Gốc</span>
+            <span>{t('bilingualView')}</span>
           </button>
 
           {/* Export/Download Button */}
           <button 
             onClick={handleExport}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-slate-200 dark:border-slate-850 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
-            title="Tải bản dịch xuống"
+            title={t('downloadTranslation')}
           >
             <Download size={13} />
-            <span>Tải xuống</span>
+            <span>{t('download')}</span>
           </button>
         </div>
       </div>
@@ -1111,13 +1226,107 @@ export default function CenterPanel({
         
         {/* Chat Header */}
         <div className="h-10 px-5 border-b border-themeBorder flex items-center justify-between bg-slate-55/30 dark:bg-slate-900/10 shrink-0 select-none">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Localization Workspace</span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{t('localizationWorkspace')}</span>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-themeMuted uppercase font-bold tracking-wider">Mục tiêu:</span>
-            <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)} className="bg-transparent border-0 text-xs font-semibold text-slate-600 dark:text-slate-400 focus:ring-0 py-0 pr-6">
-              {languages.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {/* AI Assistant Chat Language Selector */}
+            <span className="text-[10px] text-themeMuted uppercase font-bold tracking-wider flex items-center gap-1">
+              <Globe size={11} className="text-slate-400 shrink-0" />
+              <span>{t('aiChatLabel')}</span>
+            </span>
+            <select
+              value={chatLanguage}
+              onChange={(e) => setChatLanguage(e.target.value)}
+              className="bg-transparent border-none text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all select-none focus:ring-0 focus:outline-none p-0 cursor-pointer mr-2 pr-1"
+            >
+              <option value="vi" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Tiếng Việt</option>
+              <option value="en" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">English</option>
+              <option value="ja" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">日本語</option>
+              <option value="zh" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">中文</option>
+              <option value="ko" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">한국어</option>
+              <option value="lo" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">ພາສາລາວ</option>
+              <option value="es" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Español</option>
+              <option value="fr" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Français</option>
+              <option value="de" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Deutsch</option>
+              <option value="it" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Italiano</option>
+              <option value="ru" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Русский</option>
+              <option value="pt" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Português</option>
+              <option value="th" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">ไทย</option>
+              <option value="id" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Bahasa Indonesia</option>
+              <option value="ms" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Bahasa Melayu</option>
+              <option value="ar" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">العربية</option>
+              <option value="hi" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">हिन्दी</option>
+              <option value="tl" className="bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200">Tagalog</option>
             </select>
-            <span className="text-[11px] text-themeMuted select-none border-l pl-2 border-themeBorder">{saveState === 'saving' ? 'Đang lưu' : 'Đã lưu'} · {wordCount} từ</span>
+
+            <span className="text-[10px] text-themeMuted uppercase font-bold tracking-wider border-l pl-2 border-themeBorder">{t('targetLangLabel')}:</span>
+            
+            {/* Custom Searchable Dropdown */}
+            <div className="relative inline-block text-left" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLangOpen(!isLangOpen)
+                  setLangQuery('')
+                }}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all select-none"
+              >
+                <span>{languages.find(([v]) => v === targetLang)?.[1] || targetLang}</span>
+                <ChevronDown size={12} className={`text-slate-400 dark:text-slate-500 transition-transform ${isLangOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isLangOpen && (
+                <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-slate-200/80 dark:border-slate-850 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md shadow-2xl overflow-hidden z-[9999]">
+                  <div className="p-2 border-b border-slate-150 dark:border-slate-850 flex items-center gap-2 bg-slate-50/50 dark:bg-slate-950/30">
+                    <Search size={14} className="text-slate-400 dark:text-slate-500 shrink-0" />
+                    <input
+                      type="text"
+                      value={langQuery}
+                      onChange={(e) => setLangQuery(e.target.value)}
+                      placeholder={t('searchLanguagePlaceholder')}
+                      className="w-full bg-transparent border-0 text-xs text-slate-700 dark:text-slate-200 focus:ring-0 focus:outline-none p-0"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-60 overflow-y-auto py-1 scrollbar-none">
+                    {(() => {
+                      const filtered = languages.filter(([_, label]) =>
+                        label.toLowerCase().includes(langQuery.toLowerCase())
+                      )
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="px-4 py-3 text-xs text-center text-slate-400 dark:text-slate-500 font-medium">
+                            No languages found
+                          </div>
+                        )
+                      }
+                      return filtered.map(([value, label]) => {
+                        const isSelected = value === targetLang
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setTargetLang(value)
+                              setIsLangOpen(false)
+                            }}
+                            className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-indigo-55 dark:hover:bg-indigo-950/40 transition-colors ${
+                              isSelected
+                                ? 'text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50/40 dark:bg-indigo-950/20'
+                                : 'text-slate-600 dark:text-slate-400'
+                            }`}
+                          >
+                            <span>{label}</span>
+                            {isSelected && <Check size={12} className="text-indigo-500 shrink-0" />}
+                          </button>
+                        )
+                      })
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <span className="text-[11px] text-themeMuted select-none border-l pl-2 border-themeBorder">{saveState === 'saving' ? t('saving') : t('saved')} · {wordCount} {t('words')}</span>
           </div>
         </div>
 
@@ -1130,7 +1339,7 @@ export default function CenterPanel({
               </div>
               <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Localization Workspace</h3>
               <p className="text-xs text-slate-400 text-center leading-relaxed">
-                Vui lòng gửi câu gốc của bạn, nhập yêu cầu, hoặc đính kèm ảnh để bắt đầu quy trình làm việc.
+                {t('workspaceIntro')}
               </p>
             </div>
           ) : (
@@ -1158,7 +1367,7 @@ export default function CenterPanel({
                       <div className="flex-1 space-y-3 min-w-0">
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-slate-850 dark:text-slate-200 select-none">
-                            {isUser ? 'Bạn' : 'Hệ thống'}
+                            {isUser ? t('you') : t('system')}
                           </span>
                           <div className="flex items-center gap-2 select-none">
                             {!isUser && msg.model && (
@@ -1173,7 +1382,7 @@ export default function CenterPanel({
                               <button
                                 onClick={() => handleDeleteMessage(msg.id)}
                                 className="text-slate-300 hover:text-red-500 transition-colors p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-900"
-                                title="Hủy/Xóa tin nhắn này"
+                                title={t('deleteMsgConfirm')}
                               >
                                 <X size={12} />
                               </button>
@@ -1187,8 +1396,10 @@ export default function CenterPanel({
                             <Loader2 size={12} className="animate-spin text-indigo-500" />
                             <span>
                               {msg.isImageWorkflow 
-                                ? (msg.text || `Đang xử lý hình ảnh...`)
-                                : (msg.isGeneralChat ? 'Đang soạn câu trả lời...' : 'Đang dịch thô và đối chiếu rules...')}
+                                ? (msg.text || t('processingImage'))
+                                : (msg.isGeneralChat 
+                                    ? t('draftingAnswer') 
+                                    : t('translatingAndAuditing'))}
                             </span>
                           </div>
                         )}
@@ -1207,7 +1418,9 @@ export default function CenterPanel({
                               <div 
                                 className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed font-serif whitespace-pre-wrap select-text"
                               >
-                                {renderFormattedText(msg.text)}
+                                {msg.id === 'welcome' 
+                                  ? renderFormattedText(t('welcomeMsg').replace('{activeFile}', docTitle))
+                                  : renderFormattedText(msg.text)}
                               </div>
                             ) : (
                               <div className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed font-serif whitespace-pre-wrap select-text block">
@@ -1460,7 +1673,7 @@ export default function CenterPanel({
             <div className="flex items-center justify-between border-b pb-3 mb-4">
               <div className="flex items-center gap-2">
                 <BookOpen size={16} className="text-indigo-500" />
-                <h2 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Bản dịch & Gốc</h2>
+                <h2 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">{t('bilingualView')}</h2>
               </div>
               <div className="flex items-center gap-1.5">
                 {activeTab === 'source' && (
@@ -1479,7 +1692,7 @@ export default function CenterPanel({
                       setIsEditingOriginal(!isEditingOriginal)
                     }}
                     className="p-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-500 hover:text-slate-700 transition-colors"
-                    title={isEditingOriginal ? "Hoàn thành chỉnh sửa" : "Sửa văn bản gốc"}
+                    title={isEditingOriginal ? t('doneEditing') : t('editOriginal')}
                   >
                     {isEditingOriginal ? <Check size={14} /> : <Edit3 size={14} />}
                   </button>
@@ -1506,17 +1719,17 @@ export default function CenterPanel({
                     : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                 }`}
               >
-                Bản dịch đã duyệt
+                {t('approvedTranslationTitle')}
               </button>
               <button
                 onClick={() => setActiveTab('source')}
                 className={`flex-1 pb-2 text-[10px] font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
                   activeTab === 'source'
                     ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-650 dark:hover:text-slate-300'
+                    : 'border-transparent text-slate-400 hover:text-slate-655 dark:hover:text-slate-300'
                 }`}
               >
-                Văn bản gốc
+                {t('sourceTextTitle')}
               </button>
             </div>
 
@@ -1588,21 +1801,72 @@ export default function CenterPanel({
                 value={original}
                 onChange={(e) => setOriginal(e.target.value)}
                 className="flex-1 w-full bg-slate-50/50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-xs font-serif leading-relaxed text-slate-800 dark:text-slate-200 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:ring-indigo-400/50"
-                placeholder="Nhập nội dung văn bản gốc tại đây..."
+                placeholder={t('enterOriginalPlaceholder')}
               />
             ) : (
               <div className="flex-1 overflow-y-auto space-y-2.5 pr-1.5 scrollbar-thin">
                 {originalSentences.map((sent, idx) => (
                   <div
                     key={idx}
-                    className="p-2.5 rounded-lg border border-slate-100 dark:border-slate-900 bg-slate-50/30 dark:bg-slate-900/10 font-serif leading-relaxed text-slate-700 dark:text-slate-300"
+                    className="p-2.5 rounded-lg border border-slate-100 dark:border-slate-900 bg-slate-50/30 dark:bg-slate-900/10 font-serif leading-relaxed text-slate-700 dark:text-slate-350"
                   >
-                    <span className="text-[10px] font-bold text-indigo-500 block mb-0.5">Câu {idx + 1}</span>
+                    <span className="text-[10px] font-bold text-indigo-500 block mb-0.5">
+                      {t('sentenceLabel')} {idx + 1}
+                    </span>
                     <span className="text-xs">{sent}</span>
                   </div>
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {summaryModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999] animate-in fade-in select-none">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 text-left">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-2">Tóm tắt chương (Layer 2 CS)</h2>
+            <p className="text-xs text-slate-500 mb-4">
+              Xem lại và chỉnh sửa bản tóm tắt chương 2-3 câu để duy trì tính nhất quán mạch truyện.
+            </p>
+            {summaryModal.loading ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-accent-purple" />
+                <span className="text-xs text-slate-400 mt-2">Đang tạo tóm tắt nháp bằng LLM...</span>
+              </div>
+            ) : (
+              <textarea
+                value={summaryModal.summary}
+                onChange={e => setSummaryModal(prev => ({ ...prev, summary: e.target.value }))}
+                className="w-full h-32 bg-transparent border border-slate-200 dark:border-slate-800 rounded p-2 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-accent-purple resize-none"
+                placeholder="Nhập 2-3 câu tóm tắt chương truyện..."
+              />
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setSummaryModal(prev => ({ ...prev, isOpen: false }))}
+                className="px-3 py-1.5 rounded text-xs font-semibold text-slate-500 hover:bg-slate-500/10"
+              >
+                Bỏ qua
+              </button>
+              <button
+                type="button"
+                disabled={summaryModal.loading || !summaryModal.summary.trim()}
+                onClick={async () => {
+                  try {
+                    await saveChapterSummary(projectId, summaryModal.docId, summaryModal.summary)
+                    showToast('Đã lưu tóm tắt chương truyện thành công!', 'success')
+                    setSummaryModal(prev => ({ ...prev, isOpen: false }))
+                  } catch (err) {
+                    showToast('Không thể lưu tóm tắt chương truyện.', 'error')
+                  }
+                }}
+                className="bg-indigo-600 text-white px-4 py-1.5 rounded text-xs font-semibold hover:bg-indigo-750 disabled:opacity-50"
+              >
+                Lưu tóm tắt
+              </button>
+            </div>
           </div>
         </div>
       )}

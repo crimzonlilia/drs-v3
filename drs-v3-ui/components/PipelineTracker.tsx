@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { ChevronRight, Check, Loader2 } from 'lucide-react'
+import { useLanguage } from '@/app/i18n'
 
 interface PipelineTrackerProps {
   pipelineStatus: Record<string, string>
@@ -9,14 +10,16 @@ interface PipelineTrackerProps {
 }
 
 export default function PipelineTracker({ pipelineStatus, isImageDoc }: PipelineTrackerProps) {
+  const { t } = useLanguage()
+
   const steps = [
-    { key: 'upload', label: 'Upload' },
-    { key: 'ocr', label: 'OCR', cond: isImageDoc },
-    { key: 'context_retrieval', label: 'Context' },
-    { key: 'draft_translation', label: 'Draft' },
-    { key: 'review', label: 'Review' },
-    { key: 'approve', label: 'Approve' },
-    { key: 'render', label: 'Render', cond: isImageDoc }
+    { key: 'upload', label: t('stepUpload') },
+    { key: 'ocr', label: t('stepOcr'), cond: isImageDoc },
+    { key: 'context_retrieval', label: t('stepContext') },
+    { key: 'draft_translation', label: t('stepDraft') },
+    { key: 'review', label: t('stepReview') },
+    { key: 'approve', label: t('stepApprove') },
+    { key: 'render', label: t('stepRender'), cond: isImageDoc }
   ]
 
   const visibleSteps = steps.filter(s => s.cond !== false)
@@ -24,7 +27,7 @@ export default function PipelineTracker({ pipelineStatus, isImageDoc }: Pipeline
   return (
     <div className="w-full py-2 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800 px-5 select-none overflow-x-auto">
       <div className="flex items-center justify-between max-w-4xl mx-auto">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-4 shrink-0">Pipeline Progress:</span>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-4 shrink-0">{t('pipelineProgress')}</span>
         <div className="flex items-center gap-1.5 flex-1 justify-end">
           {visibleSteps.map((step, idx) => {
             const status = pipelineStatus[step.key] || 'idle'

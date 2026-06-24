@@ -2,6 +2,7 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:800
 
 export interface ProjectInfo {
   project_id: string;
+  description?: string;
   source_lang: string;
   target_lang: string;
   content_type: string;
@@ -107,13 +108,43 @@ async function getAuthToken(): Promise<string> {
   const newToken = await performSilentLogin()
   if (newToken) return newToken
 
-  // If silent login fails, clear token and redirect to home
+  // If silent login fails, clear token and redirect to login
   localStorage.removeItem('drs_token')
-  window.location.href = '/'
+  window.location.href = '/login'
   return ''
 }
 
+interface CacheEntry {
+  data: any
+  timestamp: number
+}
+
+const apiCache = new Map<string, CacheEntry>()
+const CACHE_TTL_MS = 15000 // 15 seconds
+
+export function clearApiCache() {
+  apiCache.clear()
+}
+
 export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
+  const method = (options.method || 'GET').toUpperCase()
+  const isGet = method === 'GET'
+  
+  // Cache invalidation: Clear cache on write operations
+  if (!isGet) {
+    apiCache.clear()
+  }
+
+  // Blacklist endpoints that should bypass cache (status check or real-time polling)
+  const bypassCache = endpoint.includes('/status') || endpoint.includes('/history') || endpoint.includes('/chat')
+
+  if (isGet && !bypassCache) {
+    const cached = apiCache.get(endpoint)
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return Promise.resolve(JSON.parse(JSON.stringify(cached.data)))
+    }
+  }
+
   const makeRequest = async (token: string) => {
     const headers = {
       ...options.headers,
@@ -138,14 +169,18 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
     if (newToken) {
       res = await makeRequest(newToken)
       if (res.ok) {
-        return res.json()
+        const data = await res.json()
+        if (isGet && !bypassCache) {
+          apiCache.set(endpoint, { data, timestamp: Date.now() })
+        }
+        return JSON.parse(JSON.stringify(data))
       }
     }
     
-    // If retry also fails or login fails, redirect to home
+    // If retry also fails or login fails, redirect to login
     localStorage.removeItem('drs_token')
     if (typeof window !== 'undefined') {
-      window.location.href = '/'
+      window.location.href = '/login'
     }
     throw new Error('Session expired. Redirecting to login...')
   }
@@ -155,7 +190,11 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
     throw new Error(errorText || `API Error: ${res.status}`)
   }
 
-  return res.json()
+  const data = await res.json()
+  if (isGet && !bypassCache) {
+    apiCache.set(endpoint, { data, timestamp: Date.now() })
+  }
+  return JSON.parse(JSON.stringify(data))
 }
 
 export async function listProjects(): Promise<string[]> {
@@ -322,7 +361,7 @@ export async function promoteCorrection(projectId: string, correctionId: string,
   });
 }
 
-export async function createProject(data: { project_id: string; source_lang: string; target_lang: string; content_type: string; tone_note: string }): Promise<ProjectInfo> {
+export async function createProject(data: { project_id: string; description?: string; source_lang: string; target_lang: string; content_type: string; tone_note: string }): Promise<ProjectInfo> {
   return await apiFetch('/api/projects', {
     method: 'POST',
     body: JSON.stringify(data)
@@ -330,6 +369,7 @@ export async function createProject(data: { project_id: string; source_lang: str
 }
 
 export async function uploadAssets(projectId: string, docId: string, files: File[]): Promise<any> {
+  clearApiCache();
   const formData = new FormData();
   files.forEach(file => formData.append('files', file));
   
@@ -445,6 +485,7 @@ export async function logout(): Promise<void> {
 }
 
 export async function uploadFont(projectId: string, file: File): Promise<any> {
+  clearApiCache();
   const formData = new FormData();
   formData.append('file', file);
   
@@ -526,6 +567,7 @@ export async function uploadTextBulk(
   targetLang: string,
   file: File
 ): Promise<any> {
+  clearApiCache();
   const formData = new FormData();
   formData.append('file', file);
 
@@ -566,7 +608,8 @@ export async function sendGeneralChat(
   docId: string,
   message: string,
   messageId?: string,
-  history?: { role: string; content: string }[]
+  history?: { role: string; content: string }[],
+  userLang?: string
 ): Promise<{ reply: string; model_name?: string }> {
   return await apiFetch(`/api/translation/chat`, {
     method: 'POST',
@@ -575,7 +618,8 @@ export async function sendGeneralChat(
       doc_id: docId,
       message,
       message_id: messageId,
-      history
+      history,
+      user_lang: userLang
     })
   });
 }
@@ -600,4 +644,47 @@ export async function deleteChatMessage(projectId: string, messageId: string): P
     method: 'DELETE'
   });
 }
+
+export async function getChapterSummary(projectId: string, docId: string, text?: string): Promise<{ summary: string }> {
+  return await apiFetch(`/api/projects/${projectId}/docs/${docId}/summarize`, {
+    method: 'POST',
+    body: JSON.stringify({ text })
+  });
+}
+
+export async function saveChapterSummary(projectId: string, docId: string, summary: string): Promise<any> {
+  return await apiFetch(`/api/projects/${projectId}/docs/${docId}/save-summary`, {
+    method: 'POST',
+    body: JSON.stringify({ summary })
+  });
+}
+
+export async function listKbDocuments(projectId: string): Promise<{ documents: string[] }> {
+  return await apiFetch(`/api/projects/${projectId}/kb/list`);
+}
+
+export async function deleteKbDocument(projectId: string, docId: string): Promise<any> {
+  return await apiFetch(`/api/projects/${projectId}/kb/delete/${docId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function uploadKbDocument(projectId: string, file: File): Promise<any> {
+  const token = await getAuthToken();
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/kb/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
+    body: formData
+  });
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.statusText}`);
+  }
+  return await res.json();
+}
+
 

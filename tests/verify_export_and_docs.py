@@ -26,13 +26,13 @@ def test_flow():
     client = TestClient(app)
     
     # Generate mock JWT token for testing
-    token = create_access_token(data={"sub": "admin", "id": 1, "role": "owner"})
+    token = create_access_token(data={"sub": "admin_export", "id": 1, "role": "owner"})
     headers = {"Authorization": f"Bearer {token}"}
     
     # Seed DB with a project member record
     # Note: Since database might already be seeded, we insert/replace
     import asyncio
-    asyncio.run(execute_query("INSERT OR IGNORE INTO users (id, username, hashed_password, created_at) VALUES (1, 'admin', 'mock_hash', '2026-06-06')"))
+    asyncio.run(execute_query("INSERT OR IGNORE INTO users (id, username, hashed_password, created_at) VALUES (1, 'admin_export', 'mock_hash', '2026-06-06')"))
     asyncio.run(execute_query("INSERT OR IGNORE INTO projects (id, display_name, source_lang, target_lang, content_type, created_at) VALUES ('demo_project', 'Demo', 'ja', 'vi', 'general', '2026-06-06')"))
     asyncio.run(execute_query("INSERT OR REPLACE INTO project_members (user_id, project_id, role, joined_at) VALUES (1, 'demo_project', 'owner', '2026-06-06')"))
     asyncio.run(execute_query("DELETE FROM segments WHERE project_id = ? AND doc_id = ?", ["demo_project", "doc_test_export"]))

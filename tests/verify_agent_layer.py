@@ -20,7 +20,7 @@ async def main():
     print("Starting verification of DRS v3 Agent Layer...")
     
     # 1. Initialize project memory
-    project_id = "demo_project"
+    project_id = "richard_project"
     mem = ProjectMemory(project_id)
     print(f"ProjectMemory loaded successfully. Project: {mem.project_id}")
     print(f"Glossary terms count: {len(mem.glossary)}")
@@ -28,7 +28,7 @@ async def main():
     
     # 2. Test session creation and auto-saving to R2
     gate = ApprovalGate(mem)
-    doc_id = "ch001"
+    doc_id = "doc_001"
     source_text = "ジョンは先輩 và 陛下を見ました。"
     current_draft = "John đã nhìn thấy tiền bối và bệ hạ."
     audit_report = "Mock review note"
@@ -101,8 +101,13 @@ async def main():
         }
     ]
     
+    # Look up admin user ID dynamically to avoid autoincrement mismatch
+    from core.utils.db import execute_query
+    user_rows = await execute_query("SELECT id FROM users WHERE username = 'admin'")
+    admin_user_id = user_rows[0]["id"] if user_rows else 1
+    
     print("Approving session and promoting rules...")
-    promotion_result = await gate.approve(resumed_session, auto_promote=True)
+    promotion_result = await gate.approve(resumed_session, auto_promote=True, approved_by_user_id=admin_user_id)
     print(f"Promotion Result: Glossary={promotion_result.promoted_glossary}, Entities={promotion_result.promoted_entities}, Style={promotion_result.promoted_style}")
     
     # Verify promoted glossary term exists

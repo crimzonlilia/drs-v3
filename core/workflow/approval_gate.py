@@ -340,6 +340,11 @@ class ApprovalGate:
         }
         write_text(f"{output_prefix}metadata.json", json.dumps(latest_meta, ensure_ascii=False, indent=2))
 
+        # Index approved content into knowledge_base in background
+        import asyncio
+        from core.utils.kb_service import index_document_in_kb
+        asyncio.create_task(index_document_in_kb(session.project_id, session.doc_id, final_text))
+
         # 6. Purge session from RAM cache and delete temporary draft_state
         if session.session_id in SESSION_CACHE:
             del SESSION_CACHE[session.session_id]

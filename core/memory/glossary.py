@@ -36,12 +36,13 @@ class GlossaryEntry:
 class Glossary:
     """
     Load, query, and save approved glossary for one project using Cloudflare R2.
-    File lives at R2: projects/{project_id}/memory/glossary.yaml
+    Files live at R2: projects/{project_id}/memory/{source_lang}_{target_lang}_glossary.yaml
     """
 
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: str, source_lang: Optional[str] = None, target_lang: Optional[str] = None):
         self.project_id = project_id
-        self.r2_key = f"projects/{project_id}/memory/glossary.yaml"
+        self.source_lang = source_lang.lower() if source_lang else None
+        self.target_lang = target_lang.lower() if target_lang else None
         self._entries: list[GlossaryEntry] = []
         self._load()
 
@@ -50,19 +51,105 @@ class Glossary:
     # ------------------------------------------------------------------ #
 
     def _load(self) -> None:
-        content = read_text(self.r2_key)
-        if not content:
+        from core.utils.r2 import list_files, read_text
+        import re
+        
+        # 1. If specific languages are requested, load that file.
+        if self.source_lang and self.target_lang:
+            r2_key = f"projects/{self.project_id}/memory/{self.source_lang}_{self.target_lang}_glossary.yaml"
+            content = read_text(r2_key)
+            if content:
+                try:
+                    raw = yaml.safe_load(content) or []
+                    self._entries = [GlossaryEntry(**e) for e in raw]
+                    return
+                except Exception:
+                    pass
+            
+            # Legacy fallback: load projects/{project_id}/memory/glossary.yaml
+            legacy_key = f"projects/{self.project_id}/memory/glossary.yaml"
+            legacy_content = read_text(legacy_key)
+            if legacy_content:
+                try:
+                    raw = yaml.safe_load(legacy_content) or []
+                    all_entries = [GlossaryEntry(**e) for e in raw]
+                    self._entries = [
+                        e for e in all_entries 
+                        if e.source_lang.lower() == self.source_lang 
+                        and e.target_lang.lower() == self.target_lang
+                    ]
+                    # Auto migrate by saving the filtered list to the new location
+                    if self._entries:
+                        self.save_for_pair(self.source_lang, self.target_lang, self._entries)
+                except Exception:
+                    self._entries = []
+            else:
+                self._entries = []
+        else:
+            # 2. If no specific languages are requested, load all language-specific glossaries
+            prefix = f"projects/{self.project_id}/memory/"
+            all_files = list_files(prefix)
             self._entries = []
-            return
-        try:
-            raw = yaml.safe_load(content) or []
-            self._entries = [GlossaryEntry(**e) for e in raw]
-        except Exception:
-            self._entries = []
+            
+            # Track which language pairs we loaded from language-specific files
+            loaded_pairs = set()
+            
+            for file_key in all_files:
+                filename = file_key.split("/")[-1]
+                match = re.match(r"^([a-zA-Z0-9\-]+)_([a-zA-Z0-9\-]+)_glossary\.yaml$", filename)
+                if match:
+                    src_l, tgt_l = match.group(1).lower(), match.group(2).lower()
+                    loaded_pairs.add((src_l, tgt_l))
+                    content = read_text(file_key)
+                    if content:
+                        try:
+                            raw = yaml.safe_load(content) or []
+                            self._entries.extend([GlossaryEntry(**e) for e in raw])
+                        except Exception:
+                            pass
+                            
+            # Check legacy glossary.yaml for any entries not yet migrated
+            legacy_key = f"projects/{self.project_id}/memory/glossary.yaml"
+            legacy_content = read_text(legacy_key)
+            if legacy_content:
+                try:
+                    raw = yaml.safe_load(legacy_content) or []
+                    legacy_entries = [GlossaryEntry(**e) for e in raw]
+                    # Filter out entries belonging to pairs we already loaded from specific files
+                    non_migrated = [
+                        e for e in legacy_entries 
+                        if (e.source_lang.lower(), e.target_lang.lower()) not in loaded_pairs
+                    ]
+                    if non_migrated:
+                        # Add them to our active entries
+                        self._entries.extend(non_migrated)
+                        # Migrate them to their respective language files
+                        by_pair = {}
+                        for e in non_migrated:
+                            by_pair.setdefault((e.source_lang.lower(), e.target_lang.lower()), []).append(e)
+                        for (sl, tl), entries in by_pair.items():
+                            self.save_for_pair(sl, tl, entries)
+                except Exception:
+                    pass
 
     def save(self) -> None:
-        data = [asdict(e) for e in self._entries]
-        write_text(self.r2_key, yaml.dump(data, allow_unicode=True, sort_keys=False))
+        if self.source_lang and self.target_lang:
+            self.save_for_pair(self.source_lang, self.target_lang, self._entries)
+        else:
+            # Group entries by source_lang and target_lang and save each group to its file
+            by_pair = {}
+            for e in self._entries:
+                key = (e.source_lang.lower(), e.target_lang.lower())
+                by_pair.setdefault(key, []).append(e)
+                
+            # For any pair in self._entries, write it
+            for (sl, tl), entries in by_pair.items():
+                self.save_for_pair(sl, tl, entries)
+
+    def save_for_pair(self, source_lang: str, target_lang: str, entries: list[GlossaryEntry]) -> None:
+        r2_key = f"projects/{self.project_id}/memory/{source_lang.lower()}_{target_lang.lower()}_glossary.yaml"
+        data = [asdict(e) for e in entries]
+        write_text(r2_key, yaml.dump(data, allow_unicode=True, sort_keys=False))
 
     # ------------------------------------------------------------------ #
     # Write (approval-gated — caller must confirm before calling)         #
@@ -96,7 +183,13 @@ class Glossary:
         else:
             self._entries.append(entry)
             
-        self.save()
+        # Save to the specific language pair file
+        pair_entries = [
+            e for e in self._entries 
+            if e.source_lang.lower() == entry.source_lang.lower() 
+            and e.target_lang.lower() == entry.target_lang.lower()
+        ]
+        self.save_for_pair(entry.source_lang, entry.target_lang, pair_entries)
 
     def remove_entry(self, source_term: str, source_lang: str, target_lang: str) -> bool:
         before = len(self._entries)
@@ -109,7 +202,13 @@ class Glossary:
             )
         ]
         if len(self._entries) < before:
-            self.save()
+            # Save the pair file (even if empty)
+            pair_entries = [
+                e for e in self._entries 
+                if e.source_lang.lower() == source_lang.lower() 
+                and e.target_lang.lower() == target_lang.lower()
+            ]
+            self.save_for_pair(source_lang, target_lang, pair_entries)
             return True
         return False
 

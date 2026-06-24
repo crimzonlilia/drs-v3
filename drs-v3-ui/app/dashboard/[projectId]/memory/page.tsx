@@ -405,7 +405,20 @@ export default function ProjectMemoryPage({ params }: PageProps) {
 
         <div className="flex-1 overflow-y-auto p-8 max-w-6xl w-full mx-auto scrollbar-thin">
           {loading ? (
-            <div className="text-sm text-themeMuted">Loading workspace memory...</div>
+            <div className="space-y-6 pt-4 animate-pulse select-none">
+              <div className="h-12 bg-slate-250/20 dark:bg-slate-800/40 rounded-xl w-full"></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map((n) => (
+                  <div key={n} className="bg-themeCard/65 border border-themeBorder/40 rounded-xl p-4 flex flex-col justify-between min-h-[120px]">
+                    <div className="space-y-2">
+                      <div className="h-4 bg-slate-250/20 dark:bg-slate-800/40 rounded w-1/3"></div>
+                      <div className="h-3 bg-slate-250/20 dark:bg-slate-800/40 rounded w-1/2"></div>
+                    </div>
+                    <div className="h-3 bg-slate-250/20 dark:bg-slate-800/40 rounded w-full mt-4"></div>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : (
             <>
               {/* Tab: Glossary */}

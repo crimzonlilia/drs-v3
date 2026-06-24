@@ -1,8 +1,9 @@
 'use client'
 
 import React, { useState } from 'react'
-import { ArrowLeft, ChevronDown, Moon, Sun } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Moon, Sun, Globe } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
+import { useLanguage } from '@/app/i18n'
 import Link from 'next/link'
 
 interface TopNavigationProps {
@@ -25,6 +26,7 @@ export default function TopNavigation({
 }: TopNavigationProps) {
   const [isProjectOpen, setIsProjectOpen] = useState(false)
   const { theme, toggleTheme } = useTheme()
+  const { language, setLanguage, t } = useLanguage()
 
   return (
     <header className="h-14 border-b border-themeBorder bg-themeBg px-5 flex items-center justify-between">
@@ -33,7 +35,7 @@ export default function TopNavigation({
           <Link
             href={`/dashboard/${projectId}`}
             className="p-1.5 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard"
-            title="Back to chapters"
+            title={t('backToChapters')}
           >
             <ArrowLeft size={17} />
           </Link>
@@ -80,15 +82,23 @@ export default function TopNavigation({
           <Link
             href={`/dashboard/${projectId}/memory`}
             className="px-2.5 py-1.5 rounded-md border border-themeBorder text-xs font-medium text-themeText hover:bg-themeCard transition-colors"
-            title="Project Memory Cache"
+            title={t('projectMemoryTooltip')}
           >
-            Project Memory
+            {t('projectMemory')}
           </Link>
         )}
         <button
+          onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')}
+          className="p-1.5 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard flex items-center gap-1"
+          title={t('switchLanguage')}
+        >
+          <Globe size={17} />
+          <span className="text-[10px] font-bold uppercase">{language}</span>
+        </button>
+        <button
           onClick={toggleTheme}
           className="p-1.5 rounded-md text-themeMuted hover:text-themeText hover:bg-themeCard"
-          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          title={theme === 'light' ? t('themeDark') : t('themeLight')}
         >
           {theme === 'light' ? <Moon size={17} /> : <Sun size={17} />}
         </button>

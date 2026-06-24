@@ -348,7 +348,7 @@ async def run_image_translation_pipeline_task(
     try:
         # Load project memory first
         print(f"[IMAGE PIPELINE] Loading project memory context for project: {project_id}")
-        mem = ProjectMemory(project_id)
+        mem = ProjectMemory(project_id, source_lang, target_lang)
         project_memory_context = mem.build_prompt_context(source_lang, target_lang)
 
         # 1. OCR & Direct Translation Stage
@@ -450,7 +450,7 @@ async def run_image_translation_pipeline_task(
         
     finally:
         try:
-            mem = ProjectMemory(project_id)
+            mem = ProjectMemory(project_id, source_lang, target_lang)
             from core.workflow.approval_gate import ApprovalGate
             gate = ApprovalGate(mem)
             gate.save_translation_draft(session)
@@ -528,7 +528,7 @@ async def translate_image(
     from core.memory import ProjectMemory
     from core.workflow.approval_gate import ApprovalGate
     
-    mem = ProjectMemory(project_id)
+    mem = ProjectMemory(project_id, source_lang, target_lang)
     gate = ApprovalGate(mem)
     
     # Create the session in RAM & R2
@@ -612,7 +612,7 @@ async def render_document_image(
         if session:
             session.pipeline_status["render"] = "success"
             from core.workflow.approval_gate import ApprovalGate
-            mem = ProjectMemory(project_id)
+            mem = ProjectMemory(project_id, session.source_lang, session.target_lang)
             gate = ApprovalGate(mem)
             gate.save_translation_draft(session)
             
