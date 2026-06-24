@@ -83,11 +83,18 @@ async def search_kb(project_id: str, query: str, limit: int = 5) -> List[Dict[st
         
     # 2. Fallback Keyword Search Flow
     else:
-        like_pattern = f"%{query}%"
-        rows = await execute_query(
-            "SELECT doc_id, chunk_text FROM knowledge_base WHERE project_id = ? AND chunk_text LIKE ? LIMIT ?",
-            [project_id, like_pattern, limit]
-        )
+        rows = []
+        # Only try exact phrase matching if the query is reasonably short
+        if len(query) < 100:
+            try:
+                like_pattern = f"%{query}%"
+                rows = await execute_query(
+                    "SELECT doc_id, chunk_text FROM knowledge_base WHERE project_id = ? AND chunk_text LIKE ? LIMIT ?",
+                    [project_id, like_pattern, limit]
+                )
+            except Exception as e:
+                print(f"[KB Search] Exact phrase LIKE query failed (ignoring): {e}")
+                rows = []
         
         # If exact phrase match returns nothing, search for individual words/keywords
         if not rows:

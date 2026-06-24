@@ -1475,7 +1475,10 @@ export default function CenterPanel({
                             handleSegmentChange={handleSegmentChange}
                             handleApproveAndRender={handleApproveAndRender}
                             selectedFont={selectedFont}
+                            setSelectedFont={setSelectedFont}
                             fontSize={fontSize}
+                            setFontSize={setFontSize}
+                            availableFonts={availableFonts}
                             isApproving={approvingMsgId === msg.id}
                           />
                         )}

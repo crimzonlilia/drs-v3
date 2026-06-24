@@ -687,4 +687,28 @@ export async function uploadKbDocument(projectId: string, file: File): Promise<a
   return await res.json();
 }
 
+export async function listProjectFonts(projectId: string): Promise<{ default_fonts: string[], custom_fonts: string[] }> {
+  return await apiFetch(`/api/projects/${projectId}/fonts`);
+}
+
+export async function uploadProjectFont(projectId: string, file: File): Promise<any> {
+  const token = await getAuthToken();
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const res = await fetch(`${API_BASE}/api/projects/${projectId}/fonts/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
+    body: formData
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || `Font upload failed: ${res.statusText}`);
+  }
+  return await res.json();
+}
+
+
 

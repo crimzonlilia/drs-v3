@@ -14,7 +14,9 @@ import {
   promoteCorrection,
   listKbDocuments,
   deleteKbDocument,
-  uploadKbDocument
+  uploadKbDocument,
+  listProjectFonts,
+  uploadProjectFont
 } from '@/app/api-client'
 
 interface MemoryManagerProps {
@@ -34,9 +36,11 @@ export default function MemoryManager({ projectId, sourceLang, targetLang }: Mem
   const [newTerm, setNewTerm] = useState({ source: '', target: '', note: '' })
   const [newEntity, setNewEntity] = useState({ id: '', source: '', target: '', type: 'character', pronouns: '', notes: '' })
   const [newRule, setNewRule] = useState({ id: '', category: 'tone', description: '', before: '', after: '' })
-  const [activeMemorySubTab, setActiveMemorySubTab] = useState<'glossary' | 'entities' | 'rules' | 'corrections' | 'kb'>('glossary')
+  const [activeMemorySubTab, setActiveMemorySubTab] = useState<'glossary' | 'entities' | 'rules' | 'corrections' | 'kb' | 'fonts'>('glossary')
   const [kbDocs, setKbDocs] = useState<string[]>([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [projectFonts, setProjectFonts] = useState<string[]>([])
+  const [uploadingFont, setUploadingFont] = useState(false)
 
   const loadMemory = async () => {
     if (!projectId) return
@@ -62,12 +66,42 @@ export default function MemoryManager({ projectId, sourceLang, targetLang }: Mem
     }
   }
 
+  const loadFonts = async () => {
+    try {
+      const res = await listProjectFonts(projectId)
+      setProjectFonts(res.custom_fonts || [])
+    } catch (err) {
+      console.error('Failed to load project fonts:', err)
+    }
+  }
+
   useEffect(() => {
     loadMemory()
     if (activeMemorySubTab === 'kb') {
       loadKbDocs()
+    } else if (activeMemorySubTab === 'fonts') {
+      loadFonts()
     }
   }, [projectId, activeMemorySubTab])
+
+  const handleUploadFontFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith('.ttf') && !file.name.toLowerCase().endsWith('.otf')) {
+      showToast('Chỉ hỗ trợ phông chữ định dạng .ttf hoặc .otf!', 'error')
+      return
+    }
+    setUploadingFont(true)
+    try {
+      await uploadProjectFont(projectId, file)
+      showToast('Tải lên phông chữ thành công!', 'success')
+      await loadFonts()
+    } catch (err) {
+      showToast(`Không thể tải lên phông chữ: ${err}`, 'error')
+    } finally {
+      setUploadingFont(false)
+    }
+  }
 
   const handleUploadKbFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -310,7 +344,7 @@ export default function MemoryManager({ projectId, sourceLang, targetLang }: Mem
       <div className="flex items-center justify-between border-b border-themeBorder pb-3 mb-6">
         <h1 className="text-lg font-serif font-semibold text-slate-800 dark:text-slate-100">Bộ nhớ dự án</h1>
         <div className="flex gap-4">
-          {(['glossary', 'entities', 'rules', 'corrections', 'kb'] as const).map(tab => (
+          {(['glossary', 'entities', 'rules', 'corrections', 'kb', 'fonts'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveMemorySubTab(tab)}
@@ -325,6 +359,7 @@ export default function MemoryManager({ projectId, sourceLang, targetLang }: Mem
               {tab === 'rules' && 'Quy tắc phong cách'}
               {tab === 'corrections' && 'Lịch sử sửa lỗi (Correction Log)'}
               {tab === 'kb' && 'Tài liệu tham khảo (Knowledge Base)'}
+              {tab === 'fonts' && 'Phông chữ Custom'}
             </button>
           ))}
         </div>
@@ -704,6 +739,51 @@ export default function MemoryManager({ projectId, sourceLang, targetLang }: Mem
                   {kbDocs.length === 0 && (
                     <tr>
                       <td colSpan={2} className="p-4 text-center text-slate-400">Không có tài liệu tham khảo nào được lập chỉ mục.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeMemorySubTab === 'fonts' && (
+          <div className="space-y-6">
+            <div className="bg-themeCard border border-themeBorder rounded-xl p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Tải lên Phông chữ Custom (.ttf, .otf)</h3>
+              <div className="flex items-center gap-4">
+                <input
+                  type="file"
+                  accept=".ttf,.otf"
+                  onChange={handleUploadFontFile}
+                  disabled={uploadingFont}
+                  className="bg-transparent text-xs text-themeText"
+                />
+                {uploadingFont && (
+                  <span className="text-xs text-slate-400 animate-pulse">Đang tải lên...</span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-2">
+                Tải lên các file phông chữ tiếng Việt tùy chỉnh (ví dụ: các font manga Việt hóa) để hệ thống sử dụng khi vẽ đè bản dịch lên các khung thoại bong bóng.
+              </p>
+            </div>
+
+            <div className="border border-themeBorder rounded-xl overflow-hidden bg-themeCard">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-500/5 text-slate-400 uppercase font-semibold">
+                  <tr>
+                    <th className="p-3">Tên Phông chữ / Font File Name</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-themeBorder">
+                  {projectFonts.map((font, idx) => (
+                    <tr key={idx} className="hover:bg-slate-500/5">
+                      <td className="p-3 font-semibold font-mono">{font}</td>
+                    </tr>
+                  ))}
+                  {projectFonts.length === 0 && (
+                    <tr>
+                      <td className="p-4 text-center text-slate-400">Chưa tải lên phông chữ tùy chỉnh nào. Sử dụng phông chữ Arial mặc định.</td>
                     </tr>
                   )}
                 </tbody>
