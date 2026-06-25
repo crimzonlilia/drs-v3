@@ -19,19 +19,23 @@ html, body {
 }
 
 :root {
-  --bg-primary: #fbfbfa;
+  --bg-primary: #f7f5fd;
+  --bg-gradient-start: #faf8ff;
+  --bg-gradient-end: #ede7fb;
   --bg-secondary: #ffffff;
-  --bg-sidebar: #111113;
-  --bg-sidebar-workspace: #f5f5f4;
-  --text-primary: #1f2328;
-  --text-secondary: #6b7280;
-  --border-primary: rgba(31, 35, 40, 0.10);
-  --color-accent-purple: #475569;
-  --color-accent-cyan: #0f766e;
+  --bg-sidebar: #12101e;
+  --bg-sidebar-workspace: #f4f1fa;
+  --text-primary: #231c35;
+  --text-secondary: #6b6380;
+  --border-primary: rgba(124, 58, 237, 0.08);
+  --color-accent-purple: #8b5cf6;
+  --color-accent-cyan: #0d9488;
 }
 
 [data-theme="sepia"] {
   --bg-primary: #f4ecd8;
+  --bg-gradient-start: #f4ecd8;
+  --bg-gradient-end: #f4ecd8;
   --bg-secondary: #e8dcb9;
   --bg-sidebar: #2c251f;
   --bg-sidebar-workspace: #e4d7be;
@@ -44,6 +48,8 @@ html, body {
 
 [data-theme="forest"] {
   --bg-primary: #1b2620;
+  --bg-gradient-start: #1b2620;
+  --bg-gradient-end: #1b2620;
   --bg-secondary: #24332b;
   --bg-sidebar: #101814;
   --bg-sidebar-workspace: #18231d;
@@ -55,21 +61,23 @@ html, body {
 }
 
 .dark {
-  --bg-primary: #0d0f12;
-  --bg-secondary: #15181d;
-  --bg-sidebar: #05070a;
-  --bg-sidebar-workspace: #111419;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --border-primary: rgba(148, 163, 184, 0.15);
-  --color-accent-purple: #cbd5e1;
-  --color-accent-cyan: #5eead4;
+  --bg-primary: #12101a;
+  --bg-gradient-start: #1c182c;
+  --bg-gradient-end: #0e0c15;
+  --bg-secondary: #1b172b;
+  --bg-sidebar: #0b0a10;
+  --bg-sidebar-workspace: #131120;
+  --text-primary: #e2dcf0;
+  --text-secondary: #867e96;
+  --border-primary: rgba(167, 139, 250, 0.12);
+  --color-accent-purple: #b399ff;
+  --color-accent-cyan: #e9d5ff;
 }
 
 body {
-  background-color: var(--bg-primary);
+  background: radial-gradient(circle at top left, var(--bg-gradient-start), var(--bg-gradient-end));
   color: var(--text-primary);
-  overflow: hidden;
+  overflow: auto;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 

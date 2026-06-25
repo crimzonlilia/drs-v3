@@ -67,10 +67,11 @@ export default function LeftSidebar({
 
   const formatDoc = (ch: string) => {
     if (!ch) return ''
+    let titleText = ch
     if (chapterTitles[ch]) {
-      return chapterTitles[ch]
+      titleText = chapterTitles[ch]
     }
-    const clean = ch.replace(/\.md$/, '').replace(/_draft$/, '').replace(/_review$/, '').replace(/_final$/, '')
+    const clean = titleText.replace(/\.md$/, '').replace(/_draft$/, '').replace(/_review$/, '').replace(/_final$/, '')
     const match = clean.match(/^ch(\d+)$/i);
     if (match) {
       return language === 'en' ? `Document ${parseInt(match[1], 10)}` : `Tài liệu ${parseInt(match[1], 10)}`;

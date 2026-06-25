@@ -104,11 +104,7 @@ async function getAuthToken(): Promise<string> {
   const token = localStorage.getItem('drs_token')
   if (token && !isTokenExpired(token)) return token
   
-  // Token missing or expired — attempt silent auto-login
-  const newToken = await performSilentLogin()
-  if (newToken) return newToken
-
-  // If silent login fails, clear token and redirect to login
+  // Token missing or expired — redirect to login page
   localStorage.removeItem('drs_token')
   window.location.href = '/login'
   return ''
@@ -164,20 +160,6 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
   let res = await makeRequest(token)
 
   if (res.status === 401) {
-    // Retry once with a freshly obtained token
-    const newToken = await performSilentLogin()
-    if (newToken) {
-      res = await makeRequest(newToken)
-      if (res.ok) {
-        const data = await res.json()
-        if (isGet && !bypassCache) {
-          apiCache.set(endpoint, { data, timestamp: Date.now() })
-        }
-        return JSON.parse(JSON.stringify(data))
-      }
-    }
-    
-    // If retry also fails or login fails, redirect to login
     localStorage.removeItem('drs_token')
     if (typeof window !== 'undefined') {
       window.location.href = '/login'
