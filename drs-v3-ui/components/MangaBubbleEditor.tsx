@@ -12,11 +12,6 @@ interface MangaBubbleEditorProps {
   setViewMode: (mode: 'original' | 'rendered') => void
   handleSegmentChange: (msgId: string, assetId: string, segmentId: string, newText: string) => void
   handleApproveAndRender: (msgId: string, sessionId: string, assetId: string) => void
-  selectedFont: string
-  setSelectedFont: (font: string) => void
-  fontSize: number
-  setFontSize: (size: number) => void
-  availableFonts: string[]
   isApproving?: boolean
 }
 
@@ -28,11 +23,6 @@ export default function MangaBubbleEditor({
   setViewMode,
   handleSegmentChange,
   handleApproveAndRender,
-  selectedFont,
-  setSelectedFont,
-  fontSize,
-  setFontSize,
-  availableFonts,
   isApproving = false
 }: MangaBubbleEditorProps) {
   return (
@@ -48,17 +38,17 @@ export default function MangaBubbleEditor({
 
       {msg.segments && msg.segments.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start w-full">
-          
-          {/* Left Side: Image display */}
+
+          {/* Left: image preview */}
           <div className="border border-slate-200 dark:border-slate-850 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900 p-2 flex flex-col items-center">
             <div className="relative w-full max-h-[450px] overflow-auto flex items-center justify-center">
-              <img 
+              <img
                 src={
                   mangaViewMode === 'rendered'
                     ? getRenderedViewUrl(projectId, activeFile, msg.assetId || '')
                     : getAssetViewUrl(projectId, activeFile, msg.assetId || '')
-                } 
-                alt="Manga page preview" 
+                }
+                alt="Manga page preview"
                 className="max-w-full h-auto rounded shadow-sm object-contain"
               />
             </div>
@@ -84,41 +74,9 @@ export default function MangaBubbleEditor({
                 Ảnh Đã Vẽ Dịch
               </button>
             </div>
-            <div className="mt-3 w-full border-t border-slate-200 dark:border-slate-800 pt-3 space-y-2">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Định dạng vẽ hội thoại
-              </div>
-              <div className="flex gap-2 w-full">
-                <div className="flex-1">
-                  <label className="text-[9px] text-slate-400 block mb-0.5">Phông chữ</label>
-                  <select
-                    value={selectedFont}
-                    onChange={(e) => setSelectedFont(e.target.value)}
-                    className="w-full bg-slate-200 dark:bg-slate-800 border border-slate-350 dark:border-slate-700 rounded px-2 py-1 text-[11px] text-slate-800 dark:text-slate-200 focus:outline-none"
-                  >
-                    {availableFonts.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="w-24">
-                  <label className="text-[9px] text-slate-400 block mb-0.5">Cỡ chữ tối đa</label>
-                  <input
-                    type="number"
-                    min={9}
-                    max={72}
-                    value={fontSize}
-                    onChange={(e) => setFontSize(parseInt(e.target.value, 10) || 18)}
-                    className="w-full bg-slate-200 dark:bg-slate-800 border border-slate-350 dark:border-slate-700 rounded px-2 py-1 text-[11px] text-slate-800 dark:text-slate-200 focus:outline-none"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Right Side: Text areas */}
+          {/* Right: bubble translations */}
           <div className="border border-slate-200 dark:border-slate-850 rounded-xl p-3 bg-white dark:bg-slate-950 max-h-[450px] overflow-y-auto space-y-3.5 scrollbar-thin">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 select-none">
               Bản dịch các hội thoại ({msg.segments.length})
@@ -137,7 +95,7 @@ export default function MangaBubbleEditor({
                 />
               </div>
             ))}
-            
+
             <div className="pt-2 border-t border-slate-100 dark:border-slate-900 flex justify-end">
               <button
                 disabled={msg.isApproved || isApproving}

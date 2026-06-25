@@ -2,6 +2,7 @@
 
 import React, { useState, use } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { 
   Home, 
   Settings, 
@@ -38,6 +39,7 @@ export default function ProjectDetails({ params }: PageProps) {
   const { projectId } = use(params)
   const { theme, toggleTheme } = useTheme()
   const { language, setLanguage, t } = useLanguage()
+  const pathname = usePathname()
   const [searchQuery, setSearchQuery] = useState('')
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
@@ -635,7 +637,7 @@ export default function ProjectDetails({ params }: PageProps) {
                   </p>
                 </div>
                 <Link
-                  href={`/dashboard/${projectId}/memory?from=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '')}`}
+                  href={`/dashboard/${projectId}/memory?from=${encodeURIComponent(pathname)}`}
                   className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 dark:bg-purple-550 dark:hover:bg-purple-650 text-white rounded-lg text-xs font-semibold transition-colors"
                 >
                   {language === 'en' ? 'Manage Memory' : 'Quản lý bộ nhớ'}

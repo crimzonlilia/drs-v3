@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronDown, Moon, Sun, Globe } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
 import { useLanguage } from '@/app/i18n'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
 interface TopNavigationProps {
   projectId?: string
@@ -27,6 +28,7 @@ export default function TopNavigation({
   const [isProjectOpen, setIsProjectOpen] = useState(false)
   const { theme, toggleTheme } = useTheme()
   const { language, setLanguage, t } = useLanguage()
+  const pathname = usePathname()
 
   return (
     <header className="h-14 border-b border-themeBorder bg-themeBg px-5 flex items-center justify-between">
@@ -80,7 +82,7 @@ export default function TopNavigation({
       <div className="flex items-center gap-2">
         {projectId && (
           <Link
-            href={`/dashboard/${projectId}/memory?from=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '')}`}
+            href={`/dashboard/${projectId}/memory?from=${encodeURIComponent(pathname)}`}
             className="px-2.5 py-1.5 rounded-md border border-themeBorder text-xs font-medium text-themeText hover:bg-themeCard transition-colors"
             title={t('projectMemoryTooltip')}
           >

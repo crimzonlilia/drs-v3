@@ -364,7 +364,6 @@ export default function CenterPanel({
   const [selectedFont, setSelectedFont] = useState<string>('Noto Sans')
   const [fontSize, setFontSize] = useState<number>(18)
 
-  // Active view for manga editor side-by-side (original or rendered)
   const [mangaViewModes, setMangaViewModes] = useState<Record<string, 'original' | 'rendered'>>({})
 
   // Tab and segment states for slide-out view
@@ -1515,11 +1514,6 @@ export default function CenterPanel({
                             setViewMode={(mode) => setMangaViewModes(prev => ({ ...prev, [msg.assetId || '']: mode }))}
                             handleSegmentChange={handleSegmentChange}
                             handleApproveAndRender={handleApproveAndRender}
-                            selectedFont={selectedFont}
-                            setSelectedFont={setSelectedFont}
-                            fontSize={fontSize}
-                            setFontSize={setFontSize}
-                            availableFonts={availableFonts}
                             isApproving={approvingMsgId === msg.id}
                           />
                         )}
