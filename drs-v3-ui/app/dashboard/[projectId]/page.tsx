@@ -46,7 +46,6 @@ export default function ProjectDetails({ params }: PageProps) {
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [newChapterTitle, setNewChapterTitle] = useState('')
-  const [newChapterType, setNewChapterType] = useState<'text' | 'image'>('text')
   const [isCreating, setIsCreating] = useState(false)
   const [activeModal, setActiveModal] = useState<'shared' | 'settings' | null>(null)
 
@@ -139,7 +138,6 @@ export default function ProjectDetails({ params }: PageProps) {
       
       setIsModalOpen(false);
       setNewChapterTitle('');
-      setNewChapterType('text');
       
       await loadData();
       showToast(t('createDocSuccess'), 'success');

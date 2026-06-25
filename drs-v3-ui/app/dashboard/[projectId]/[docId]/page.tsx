@@ -5,7 +5,6 @@ import TopNavigation from '@/components/TopNavigation'
 import LeftSidebar from '@/components/LeftSidebar'
 import CenterPanel from '@/components/CenterPanel'
 import { listChapters, getProject, ProjectInfo } from '@/app/api-client'
-import { useLanguage } from '@/app/i18n'
 
 interface PageProps {
   params: Promise<{ projectId: string; docId: string }>
@@ -13,7 +12,6 @@ interface PageProps {
 
 export default function ChapterWorkspace({ params }: PageProps) {
   const { projectId, docId } = use(params)
-  const { language, setLanguage, t } = useLanguage()
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
   
   // Format document name for display, e.g. "chapter1" -> "Chapter 1"
