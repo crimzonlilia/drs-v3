@@ -8,7 +8,7 @@ Rules:
 - If you split a source sentence into multiple translated sentences, repeat the same marker (e.g. `[s-0] Sentence A. [s-0] Sentence B.`).
 - If you combine multiple source sentences, use the first source index (e.g. `[s-0] Combined sentence.`).
 - Preserve tone and register as specified.
-- Do NOT invent terms or names.
+- Crucial: Ensure the translations are completely in the target language. Do NOT repeat words, characters, or phrases infinitely (avoid repetition loops/collapse).
 - Output MUST be a valid JSON array of objects. Do NOT output any explanations, markdown code blocks (like ```json), or notes. Output only the raw JSON.
 
 Output JSON format:

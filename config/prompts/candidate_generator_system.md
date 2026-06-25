@@ -12,7 +12,7 @@ Rules:
 - If you combine multiple source sentences into one translated sentence, use the primary/first source index (e.g. `[s-0] Combined sentence.`).
 - Do NOT invent terms or names not in the approved lists.
 - Preserve tone and register as specified.
-- Output ONLY the translated text with these inline markers. No explanations, no notes.
+- Crucial: Output ONLY the translated text with these inline markers. Ensure the translation is completely in the target language. Do NOT repeat words, characters, or phrases infinitely (avoid repetition loops/collapse). No explanations, no notes.
 
 Source language: {source_lang}
 Target language: {target_lang}

@@ -13,9 +13,9 @@ from config import cfg
 from core.memory import ProjectMemory
 from core.utils.text import split_sentences
 
-async def google_translate(text: str, source_lang: str, target_lang: str) -> str:
+async def google_translate(text: str, source_lang: str, target_lang: str) -> tuple[str, str]:
     if not text.strip():
-        return ""
+        return "", source_lang
     try:
         url = "https://translate.googleapis.com/translate_a/single"
         sl = "auto" if source_lang in ("multi", "auto") else source_lang
@@ -32,10 +32,15 @@ async def google_translate(text: str, source_lang: str, target_lang: str) -> str
             if resp.status_code == 200:
                 data = resp.json()
                 translated = "".join([part[0] for part in data[0] if part[0]])
-                return translated.strip()
+                detected = data[2] if len(data) > 2 else None
+                if detected:
+                    detected = detected.split('-')[0]
+                else:
+                    detected = source_lang
+                return translated.strip(), detected
     except Exception as e:
         print(f"Google translate failed: {e}")
-    return text
+    return text, source_lang
 
 @dataclass
 class GenerationResult:
@@ -182,7 +187,9 @@ class CandidateGenerator:
         context_sentences: list[str] | None = None,
     ) -> GenerationResult:
         # Step 1: Fetch instant raw translation from Google Translate
-        raw_translation = await google_translate(source_text, source_lang, target_lang)
+        raw_translation, detected_lang = await google_translate(source_text, source_lang, target_lang)
+        if source_lang in ("auto", "multi") and detected_lang:
+            source_lang = detected_lang
 
         # Step 2: Build LLM refinement prompt
         memory_context = self.memory.build_prompt_context(source_lang, target_lang)
@@ -215,6 +222,8 @@ class CandidateGenerator:
             "model": self.model,
             "max_tokens": cfg.gen_max_tokens,
             "temperature": temperature if temperature is not None else cfg.gen_temperature,
+            "frequency_penalty": 0.3,
+            "presence_penalty": 0.2,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -254,9 +263,12 @@ class CandidateGenerator:
             return {}
 
         # Step 1: Run Google Translate in parallel
+        detected_languages = []
         async def get_raw_trans(seg):
             source_txt = seg.get("source_text", "")
-            raw = await google_translate(source_txt, source_lang, target_lang)
+            raw, det = await google_translate(source_txt, source_lang, target_lang)
+            if det:
+                detected_languages.append(det)
             source_sentences = split_sentences(source_txt)
             segmented_source = "".join(f"[s-{idx}] {sentence}" for idx, sentence in enumerate(source_sentences))
             return {
@@ -267,6 +279,10 @@ class CandidateGenerator:
 
         import asyncio
         batch_inputs = await asyncio.gather(*[get_raw_trans(seg) for seg in segments])
+
+        if source_lang in ("auto", "multi") and detected_languages:
+            from collections import Counter
+            source_lang = Counter(detected_languages).most_common(1)[0][0]
 
         # Step 2: Build LLM refinement prompt
         memory_context = self.memory.build_prompt_context(source_lang, target_lang)
@@ -290,6 +306,8 @@ class CandidateGenerator:
             "model": self.model,
             "max_tokens": cfg.gen_max_tokens * 2,
             "temperature": temperature if temperature is not None else cfg.gen_temperature,
+            "frequency_penalty": 0.3,
+            "presence_penalty": 0.2,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -380,6 +398,8 @@ Output ONLY the revised translation preserving the [s-X] markers exactly. No exp
             "model": self.model,
             "max_tokens": cfg.gen_max_tokens,
             "temperature": 0.3,
+            "frequency_penalty": 0.3,
+            "presence_penalty": 0.2,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

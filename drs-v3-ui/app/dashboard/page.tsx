@@ -65,6 +65,7 @@ export default function DashboardHome() {
   const [newProjId, setNewProjId] = useState('')
   const [newProjSource, setNewProjSource] = useState('auto')
   const [newProjTarget, setNewProjTarget] = useState('vi')
+  const [showAdvancedCreate, setShowAdvancedCreate] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [activeView, setActiveView] = useState<'projects' | 'shared' | 'settings'>('projects')
   const [activeSettingsTab, setActiveSettingsTab] = useState<'account' | 'themes' | 'billing'>('account')
@@ -72,6 +73,10 @@ export default function DashboardHome() {
   const [settingsEmail, setSettingsEmail] = useState('linh304204@gmail.com')
 
   const handleCreateProject = () => {
+    setNewProjId('')
+    setNewProjSource('auto')
+    setNewProjTarget('vi')
+    setShowAdvancedCreate(false)
     setIsCreateOpen(true)
   }
 
@@ -623,47 +628,67 @@ export default function DashboardHome() {
                 </label>
                 <input
                   type="text"
-                  placeholder={language === 'en' ? 'e.g. Richard I Crusade Campaign' : 'Ví dụ: Chiến dịch Thập tự chinh Richard I'}
+                  placeholder={language === 'en' ? 'Enter project name' : 'Nhập tên dự án'}
                   value={newProjId}
                   onChange={(e) => setNewProjId(e.target.value)}
                   className="w-full px-4 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-sm focus:border-accent-purple/50 focus:outline-none transition-colors"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
-                    {t('sourceLang')}
-                  </label>
-                  <select
-                    value={newProjSource}
-                    onChange={(e) => setNewProjSource(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-xs focus:border-accent-purple/50 focus:outline-none transition-colors text-themeText"
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedCreate(!showAdvancedCreate)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-accent-purple dark:text-accent-violet hover:underline focus:outline-none"
+                >
+                  <svg
+                    className={`w-3 h-3 transition-transform duration-200 ${showAdvancedCreate ? 'rotate-90' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    {LANGUAGES.map((lang) => (
-                      <option key={lang.code} value={lang.code}>
-                        {lang.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
-                    {t('targetLangLabel')}
-                  </label>
-                  <select
-                    value={newProjTarget}
-                    onChange={(e) => setNewProjTarget(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-xs focus:border-accent-purple/50 focus:outline-none transition-colors text-themeText"
-                  >
-                    {LANGUAGES.filter(l => l.code !== 'auto' && l.code !== 'multi').map((lang) => (
-                      <option key={lang.code} value={lang.code}>
-                        {lang.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span>{language === 'en' ? 'Advanced settings' : 'Cài đặt nâng cao'}</span>
+                </button>
               </div>
+
+              {showAdvancedCreate && (
+                <div className="grid grid-cols-2 gap-4 animate-fade-in">
+                  <div>
+                    <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
+                      {t('sourceLang')}
+                    </label>
+                    <select
+                      value={newProjSource}
+                      onChange={(e) => setNewProjSource(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-xs focus:border-accent-purple/50 focus:outline-none transition-colors text-themeText"
+                    >
+                      {LANGUAGES.map((lang) => (
+                        <option key={lang.code} value={lang.code}>
+                          {lang.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-2">
+                      {t('targetLangLabel')}
+                    </label>
+                    <select
+                      value={newProjTarget}
+                      onChange={(e) => setNewProjTarget(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-themeBg border border-themeBorder rounded-xl text-xs focus:border-accent-purple/50 focus:outline-none transition-colors text-themeText"
+                    >
+                      {LANGUAGES.filter(l => l.code !== 'auto' && l.code !== 'multi').map((lang) => (
+                        <option key={lang.code} value={lang.code}>
+                          {lang.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-3 mt-6">

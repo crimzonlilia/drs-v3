@@ -1030,8 +1030,28 @@ export default function CenterPanel({
     const originalMsg = chatMessages.find(m => m.id === msgId)
     if (!originalMsg) return
     
+    // Extract original markers from originalMsg.text
+    const markerRegex = /\[s-(\d+)\]/g
+    const originalMarkers: number[] = []
+    let match
+    while ((match = markerRegex.exec(originalMsg.text)) !== null) {
+      originalMarkers.push(parseInt(match[1], 10))
+    }
+    
+    // Reconstruct editTranslationText with markers if original had them
+    let processedTranslationText = editTranslationText.trim()
+    if (originalMarkers.length > 0) {
+      const sentences = splitSentences(editTranslationText)
+      if (sentences.length > 0) {
+        processedTranslationText = sentences.map((sentence, idx) => {
+          const marker = idx < originalMarkers.length ? originalMarkers[idx] : originalMarkers[originalMarkers.length - 1]
+          return `[s-${marker}] ${sentence}`
+        }).join(' ')
+      }
+    }
+    
     const userMsgId = `user_${Date.now()}`
-    const promptText = `Sửa bản dịch câu này: "${editTranslationText}"` + 
+    const promptText = `Sửa bản dịch câu này: "${processedTranslationText}"` + 
       (refineFeedbackText ? `\nYêu cầu thêm: "${refineFeedbackText}"` : '')
       
     const userMsg: ChatMessage = {
@@ -1059,11 +1079,11 @@ export default function CenterPanel({
     setPipelineStep('translating')
     
     try {
-      if (editTranslationText !== originalMsg.text) {
-        await saveSessionDraft(sessionId, editTranslationText)
+      if (processedTranslationText !== originalMsg.text) {
+        await saveSessionDraft(sessionId, processedTranslationText)
       }
       
-      let finalDraftText = editTranslationText
+      let finalDraftText = processedTranslationText
       let finalIssues = originalMsg.validationIssues || []
       let finalScore = originalMsg.editorialScore || {}
       let finalProposals = originalMsg.proposals || []
@@ -1438,7 +1458,7 @@ export default function CenterPanel({
                                     
                                     let sIdx = index
                                     let cleanSentence = sentence
-                                    const match = sentence.match(/^\[s-(\d+)\]\s*(.*)/s)
+                                    const match = sentence.match(/^\s*\[s-(\d+)\]\s*(.*)/s)
                                     if (match) {
                                       sIdx = parseInt(match[1], 10)
                                       cleanSentence = match[2]
@@ -1540,7 +1560,7 @@ export default function CenterPanel({
                                 <button
                                   onClick={() => {
                                       setEditingMessageId(editingMessageId === msg.id ? null : msg.id)
-                                      setEditTranslationText(msg.text)
+                                      setEditTranslationText(msg.text.replace(/\[s-\d+\]\s*/g, ''))
                                       setRefineFeedbackText('')
                                   }}
                                   className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-slate-200 hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-500/5 dark:border-slate-800 dark:hover:border-indigo-700 transition-colors bg-white dark:bg-slate-900 flex items-center gap-1"
@@ -1774,7 +1794,7 @@ export default function CenterPanel({
                             
                             let sIdx = index
                             let cleanSentence = sentence
-                            const match = sentence.match(/^\[s-(\d+)\]\s*(.*)/s)
+                            const match = sentence.match(/^\s*\[s-(\d+)\]\s*(.*)/s)
                             if (match) {
                               sIdx = parseInt(match[1], 10)
                               cleanSentence = match[2]

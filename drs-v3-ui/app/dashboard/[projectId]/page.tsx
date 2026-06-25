@@ -540,7 +540,7 @@ export default function ProjectDetails({ params }: PageProps) {
                 </label>
                 <input
                   type="text"
-                  placeholder={language === 'en' ? 'e.g. Chapter 1' : 'Ví dụ: Chương 1'}
+                  placeholder={language === 'en' ? 'Enter document name' : 'Nhập tên tài liệu'}
                   value={newChapterTitle}
                   onChange={(e) => setNewChapterTitle(e.target.value)}
                   className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:border-orange-500/50 focus:outline-none transition-colors"
@@ -661,7 +661,7 @@ export default function ProjectDetails({ params }: PageProps) {
                 </label>
                 <input
                   type="text"
-                  placeholder={language === 'en' ? 'e.g. Smooth wordings, classical tone' : 'Ví dụ: Chữ nghĩa mượt mà, văn phong cổ điển'}
+                  placeholder={language === 'en' ? 'Enter translation tone' : 'Nhập văn phong dịch'}
                   defaultValue={language === 'en' ? 'Smooth wordings, preserve Japanese honorifics' : 'Chữ nghĩa mượt mà, giữ nguyên các kính ngữ tiếng Nhật'}
                   className="w-full px-3 py-2 bg-themeBg border border-themeBorder rounded-xl text-sm focus:outline-none focus:border-accent-purple/50"
                 />
