@@ -4,12 +4,9 @@ import React, { useState } from 'react'
 import Link from 'next/link'
 import { 
   Home, 
-  Users, 
   Settings, 
   HelpCircle, 
-  SlidersHorizontal, 
   Search, 
-  Bell, 
   MoreHorizontal, 
   Clock, 
   FileText, 
@@ -204,21 +201,6 @@ export default function DashboardHome() {
             </div>
 
             <div 
-              onClick={() => setActiveView('shared')}
-              className={`relative py-2 px-3 flex items-center gap-3 cursor-pointer font-medium transition-colors ${
-                activeView === 'shared' ? 'text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {activeView === 'shared' && (
-                <svg className="absolute inset-0 w-full h-full text-accent-purple/60 dark:text-accent-violet/60 pointer-events-none" viewBox="0 0 170 46" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M6 22C6 11 35 3.5 85 3.5C135 3.5 164 11 164 22C164 33 135 41.5 85 41.5C35 41.5 6 33 6 22Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-              <Users size={18} />
-              <span>{language === 'en' ? 'Shared with me' : 'Được chia sẻ'}</span>
-            </div>
-
-            <div 
               onClick={() => setActiveView('settings')}
               className={`relative py-2 px-3 flex items-center gap-3 cursor-pointer font-medium transition-colors ${
                 activeView === 'settings' ? 'text-white' : 'text-slate-400 hover:text-white'
@@ -310,13 +292,6 @@ export default function DashboardHome() {
                   />
                 </div>
 
-                <button className="p-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-lg transition-colors text-slate-500 dark:text-slate-400" title="Filter options">
-                  <SlidersHorizontal size={16} />
-                </button>
-
-                <button className="p-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-lg transition-colors text-slate-500 dark:text-slate-400" title="Notifications">
-                  <Bell size={16} />
-                </button>
               </div>
             </header>
 
@@ -492,9 +467,6 @@ export default function DashboardHome() {
                   className="px-4 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/20 rounded-full text-xs font-semibold transition-all"
                 >
                   {language === 'en' ? 'Logout' : 'Đăng xuất'}
-                </button>
-                <button className="p-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-lg transition-colors text-slate-500 dark:text-slate-400" title="Notifications">
-                  <Bell size={16} />
                 </button>
               </div>
             </header>

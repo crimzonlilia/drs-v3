@@ -4,12 +4,9 @@ import React, { useState, use } from 'react'
 import Link from 'next/link'
 import { 
   Home, 
-  Users, 
   Settings, 
   HelpCircle, 
-  SlidersHorizontal, 
   Search, 
-  Bell, 
   MoreHorizontal, 
   Clock, 
   Folder,
@@ -241,14 +238,6 @@ export default function ProjectDetails({ params }: PageProps) {
             </Link>
 
             <div 
-              onClick={() => setActiveModal('shared')}
-              className="py-2 px-3 flex items-center gap-3 hover:text-white cursor-pointer transition-colors"
-            >
-              <Users size={18} />
-              <span>{language === 'en' ? 'Shared with me' : 'Được chia sẻ'}</span>
-            </div>
-
-            <div 
               onClick={() => setActiveModal('settings')}
               className="py-2 px-3 flex items-center gap-3 hover:text-white cursor-pointer transition-colors"
             >
@@ -364,42 +353,6 @@ export default function ProjectDetails({ params }: PageProps) {
                       <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
                       {language === 'en' ? 'Blank document' : 'Tài liệu trống'}
                     </button>
-                    <button
-                      onClick={() => {
-                        setIsNewDropdownOpen(false);
-                        showToast(language === 'en' ? 'Template library is coming soon!' : 'Thư viện mẫu sẽ sớm ra mắt!', 'info');
-                      }}
-                      className="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 text-slate-400 dark:text-slate-500"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-750"></span>
-                      {language === 'en' ? 'From template' : 'Từ biểu mẫu'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsNewDropdownOpen(false);
-                        showToast(language === 'en' ? 'Import feature is coming soon!' : 'Tính năng nhập tài liệu sẽ sớm ra mắt!', 'info');
-                      }}
-                      className="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 text-slate-400 dark:text-slate-500"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-750"></span>
-                      {language === 'en' ? 'Import Markdown/DOCX' : 'Nhập tệp Markdown/DOCX'}
-                    </button>
-                    
-                    <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />
-                    
-                    <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                      {language === 'en' ? 'Folders' : 'Thư mục'}
-                    </div>
-                    <button
-                      onClick={() => {
-                        setIsNewDropdownOpen(false);
-                        showToast(language === 'en' ? 'Folders are coming soon!' : 'Tính năng tạo thư mục sẽ sớm ra mắt!', 'info');
-                      }}
-                      className="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 text-slate-400 dark:text-slate-500"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-750"></span>
-                      {language === 'en' ? 'New folder' : 'Thư mục mới'}
-                    </button>
                   </div>
                 </>
               )}
@@ -419,13 +372,6 @@ export default function ProjectDetails({ params }: PageProps) {
               />
             </div>
 
-            <button className="p-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-lg transition-colors text-slate-500 dark:text-slate-400">
-              <SlidersHorizontal size={16} />
-            </button>
-
-            <button className="p-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-lg transition-colors text-slate-500 dark:text-slate-400">
-              <Bell size={16} />
-            </button>
           </div>
         </header>
 

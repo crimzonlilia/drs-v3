@@ -198,6 +198,7 @@ interface ChatMessage {
   // Image properties
   isImageWorkflow?: boolean
   assetId?: string
+  previewUrl?: string
   segments?: any[]
   isGeneralChat?: boolean
   model?: string
@@ -858,22 +859,24 @@ export default function CenterPanel({
     if (selectedFile) {
       // Image translation flow
       const filename = selectedFile.name
+      const previewUrl = imagePreviewUrl || ''
       const msgId = `img_msg_${Date.now()}`
       
       const userMsg: ChatMessage = {
         id: `user_${msgId}`,
         sender: 'user',
-        text: chatInput ? `Dịch ảnh [${filename}]\nYêu cầu: ${chatInput}` : `Dịch ảnh [${filename}]`,
+        text: chatInput.trim(),
         status: 'done',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isImageWorkflow: true,
-        assetId: filename
+        assetId: filename,
+        previewUrl
       }
 
       const aiMsg: ChatMessage = {
         id: `ai_${msgId}`,
         sender: 'ai',
-        text: `Đang xử lý hình ảnh ${filename}...`,
+        text: 'Đang xử lý hình ảnh...',
         status: 'processing',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isImageWorkflow: true,
@@ -1441,13 +1444,13 @@ export default function CenterPanel({
                           <div className="space-y-2">
                             {isUser || !msg.originalText ? (
                               <div className="space-y-2.5">
-                                {msg.isImageWorkflow && msg.assetId && (
+                                {msg.isImageWorkflow && (msg.previewUrl || msg.assetId) && (
                                   <div className="relative group max-w-[180px] rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-slate-100 dark:bg-slate-900">
                                     <img 
-                                      src={`/api/docs/assets/view/${projectId}/${activeFile}/${msg.assetId}`} 
-                                      alt={msg.assetId} 
+                                      src={msg.previewUrl || `/api/docs/assets/view/${projectId}/${activeFile}/${msg.assetId}`} 
+                                      alt="Ảnh đã tải lên" 
                                       className="max-h-[120px] w-auto object-contain cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
-                                      onClick={() => window.open(`/api/docs/assets/view/${projectId}/${activeFile}/${msg.assetId}`, '_blank')}
+                                      onClick={() => window.open(msg.previewUrl || `/api/docs/assets/view/${projectId}/${activeFile}/${msg.assetId}`, '_blank')}
                                       title="Click để xem ảnh lớn"
                                     />
                                   </div>

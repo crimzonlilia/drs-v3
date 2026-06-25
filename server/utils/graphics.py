@@ -157,6 +157,7 @@ def compute_render_region(
     image_size: tuple[int, int],
     bubble_box: Box | None = None,
     image: Image.Image | None = None,
+    enable_fill_detection: bool = False,
 ) -> Box:
     """
     Stage 2: estimate the full dialogue region from OCR text bounds.
@@ -165,7 +166,11 @@ def compute_render_region(
     if bubble_box:
         return clamp_box(bubble_box, image_size)
 
-    if image:
+    # Keep this hook for a future real speech-bubble detector, but do not use
+    # connected white-area detection on production manga pages. Panel
+    # backgrounds are often connected to bubbles and can wipe large artwork
+    # regions when treated as a single fill area.
+    if image and enable_fill_detection:
         detected_region = detect_bubble_fill_region(image, ocr_box)
         if detected_region:
             return detected_region
@@ -176,11 +181,16 @@ def compute_render_region(
     cx = (x1 + x2) / 2
     cy = (y1 + y2) / 2
 
-    small_box_boost = 1.7 if min(box_w, box_h) < 80 else 1.2
-    target_w = max(box_w * 2.8 * small_box_boost, box_h * 7.5, 130.0)
-    target_h = max(box_h * 5.0 * small_box_boost, box_w * 1.15, 90.0)
-    target_w = min(target_w, image_size[0] * 0.82)
-    target_h = min(target_h, image_size[1] * 0.55)
+    aspect = box_w / box_h
+    if aspect > 2.2:
+        target_w = min(max(box_w * 1.35, 140.0), box_w * 2.2, image_size[0] * 0.45)
+        target_h = min(max(box_h * 3.1, 54.0), max(box_h * 5.0, 90.0), image_size[1] * 0.18)
+    elif aspect < 0.55:
+        target_w = min(max(box_w * 2.1, 70.0), image_size[0] * 0.22)
+        target_h = min(max(box_h * 1.35, 110.0), image_size[1] * 0.35)
+    else:
+        target_w = min(max(box_w * 1.8, 90.0), image_size[0] * 0.32)
+        target_h = min(max(box_h * 1.9, 70.0), image_size[1] * 0.24)
 
     region = (cx - target_w / 2, cy - target_h / 2, cx + target_w / 2, cy + target_h / 2)
     return clamp_box(region, image_size)
@@ -237,6 +247,8 @@ def remove_original_text(img: Image.Image, ocr_box: Box) -> None:
     pad_y = clamp(height * 0.07, 2, 8)
     cleanup_box = clamp_box((x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y), img.size)
     fill = sample_text_cleanup_color(img, ocr_box)
+    if pixel_luminance(fill) < 235:
+        fill = (255, 255, 255)
     draw.rounded_rectangle(cleanup_box, radius=max(2, int(min(width, height) * 0.08)), fill=fill)
 
 def wrap_text_to_lines(draw: ImageDraw.ImageDraw, text: str, width: int, font: ImageFont.ImageFont) -> list:
