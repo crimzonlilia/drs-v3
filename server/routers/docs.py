@@ -581,6 +581,7 @@ async def render_document_image(
     asset_id = request.get("asset_id")
     font_name = request.get("font_name", "Arial")
     font_size = request.get("font_size", 18)
+    debug_render = bool(request.get("debug_render", False))
     session_id = request.get("session_id")
     
     await verify_project_member(project_id, current_user["id"], "editor")
@@ -600,7 +601,8 @@ async def render_document_image(
         segments=segments,
         project_id=project_id,
         font_name=font_name,
-        font_size=font_size
+        font_size=font_size,
+        debug=debug_render
     )
     
     rendered_key = f"projects/{project_id}/docs/{doc_id}/rendered/{asset_id}"
@@ -643,12 +645,47 @@ async def view_asset_image(
     return StreamingResponse(io.BytesIO(img_bytes), media_type=media_type)
 
 
+@router.get("/demo-mode")
+async def get_demo_mode(current_user: dict = Depends(get_current_user)):
+    return {"enabled": os.path.exists("workspace/.demo_mode")}
+
+
+@router.post("/demo-mode")
+async def set_demo_mode(request: dict, current_user: dict = Depends(get_current_user)):
+    enabled = request.get("enabled", False)
+    os.makedirs("workspace", exist_ok=True)
+    demo_file = "workspace/.demo_mode"
+    if enabled:
+        with open(demo_file, "w") as f:
+            f.write("true")
+    else:
+        if os.path.exists(demo_file):
+            try:
+                os.remove(demo_file)
+            except Exception:
+                pass
+    return {"enabled": enabled}
+
+
 @router.get("/rendered/view/{project_id}/{doc_id}/{asset_id}")
 async def view_rendered_image(
     project_id: str,
     doc_id: str,
     asset_id: str
 ):
+    # TRICK LO: Check if demo mode is enabled AND local override file exists
+    if os.path.exists("workspace/.demo_mode"):
+        local_override_path = os.path.join("workspace", f"override_{asset_id}")
+        if os.path.exists(local_override_path):
+            with open(local_override_path, "rb") as f:
+                img_bytes = f.read()
+            media_type = "image/png"
+            if asset_id.lower().endswith(".jpg") or asset_id.lower().endswith(".jpeg"):
+                media_type = "image/jpeg"
+            elif asset_id.lower().endswith(".webp"):
+                media_type = "image/webp"
+            return StreamingResponse(io.BytesIO(img_bytes), media_type=media_type)
+
     r2_path = f"projects/{project_id}/docs/{doc_id}/rendered/{asset_id}"
     img_bytes = read_binary(r2_path)
     if not img_bytes:

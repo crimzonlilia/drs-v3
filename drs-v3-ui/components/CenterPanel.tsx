@@ -1440,12 +1440,25 @@ export default function CenterPanel({
                         {msg.status === 'done' && (!msg.isImageWorkflow || isUser) && (
                           <div className="space-y-2">
                             {isUser || !msg.originalText ? (
-                              <div 
-                                className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed font-serif whitespace-pre-wrap select-text"
-                              >
-                                {msg.id === 'welcome' 
-                                  ? renderFormattedText(t('welcomeMsg').replace('{activeFile}', docTitle))
-                                  : renderFormattedText(msg.text)}
+                              <div className="space-y-2.5">
+                                {msg.isImageWorkflow && msg.assetId && (
+                                  <div className="relative group max-w-[180px] rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-slate-100 dark:bg-slate-900">
+                                    <img 
+                                      src={`/api/docs/assets/view/${projectId}/${activeFile}/${msg.assetId}`} 
+                                      alt={msg.assetId} 
+                                      className="max-h-[120px] w-auto object-contain cursor-pointer transition-transform duration-200 hover:scale-[1.03]"
+                                      onClick={() => window.open(`/api/docs/assets/view/${projectId}/${activeFile}/${msg.assetId}`, '_blank')}
+                                      title="Click để xem ảnh lớn"
+                                    />
+                                  </div>
+                                )}
+                                <div 
+                                  className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed font-serif whitespace-pre-wrap select-text"
+                                >
+                                  {msg.id === 'welcome' 
+                                    ? renderFormattedText(t('welcomeMsg').replace('{activeFile}', docTitle))
+                                    : renderFormattedText(msg.text)}
+                                </div>
                               </div>
                             ) : (
                               <div className="text-slate-850 dark:text-slate-200 text-[13.5px] leading-relaxed font-serif whitespace-pre-wrap select-text block">

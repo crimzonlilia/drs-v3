@@ -12,7 +12,6 @@ import {
   Moon,
   Sun,
   Sparkles,
-  Bookmark,
   Edit3
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'

@@ -72,33 +72,6 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
-async function performSilentLogin(): Promise<string> {
-  try {
-    const params = new URLSearchParams()
-    params.append('username', 'admin')
-    params.append('password', 'admin123')
-    
-    const response = await fetch(`${API_BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: params
-    })
-    
-    if (response.ok) {
-      const data = await response.json()
-      if (data.access_token) {
-        localStorage.setItem('drs_token', data.access_token)
-        return data.access_token
-      }
-    }
-  } catch (err) {
-    console.error('Silent auto-login request failed:', err)
-  }
-  return ''
-}
-
 async function getAuthToken(): Promise<string> {
   if (typeof window === 'undefined') return ''
   const token = localStorage.getItem('drs_token')
@@ -522,7 +495,8 @@ export async function renderDocumentImage(
   assetId: string,
   fontName: string,
   fontSize: number,
-  sessionId?: string
+  sessionId?: string,
+  debugRender: boolean = false
 ): Promise<any> {
   return await apiFetch(`/api/docs/${docId}/render`, {
     method: 'POST',
@@ -531,7 +505,8 @@ export async function renderDocumentImage(
       asset_id: assetId,
       font_name: fontName,
       font_size: fontSize,
-      session_id: sessionId
+      session_id: sessionId,
+      debug_render: debugRender
     })
   });
 }
@@ -567,7 +542,7 @@ export async function uploadTextBulk(
   const formData = new FormData();
   formData.append('file', file);
 
-  const token = localStorage.getItem('token');
+  const token = await getAuthToken();
   const headers: HeadersInit = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;

@@ -53,14 +53,12 @@ export default function ProjectDetails({ params }: PageProps) {
   const [activeModal, setActiveModal] = useState<'shared' | 'settings' | null>(null)
   const [activeDropdownChapter, setActiveDropdownChapter] = useState<string | null>(null)
   const [editDisplayName, setEditDisplayName] = useState('')
-  const [editDescription, setEditDescription] = useState('')
 
   const loadData = async () => {
     try {
       const info = await getProject(projectId);
       setProjectInfo(info);
       setEditDisplayName(info.description || '');
-      setEditDescription(info.description || '');
     } catch (err) {
       console.error('Error loading project details info:', err);
     }

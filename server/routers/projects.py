@@ -885,5 +885,3 @@ async def auto_generate_and_save_summary(project_id: str, doc_id: str, approved_
             ])
     except Exception as e:
         print(f"Failed to auto-generate and save chapter summary: {e}")
-
-
