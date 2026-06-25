@@ -724,39 +724,5 @@ export async function uploadProjectFont(projectId: string, file: File): Promise<
   return await res.json();
 }
 
-export async function login(username: string, password: string): Promise<void> {
-  const params = new URLSearchParams()
-  params.append('username', username)
-  params.append('password', password)
 
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params
-  })
-
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}))
-    throw new Error(detail.detail || `Đăng nhập thất bại (${res.status})`)
-  }
-
-  const data = await res.json()
-  if (!data.access_token) {
-    throw new Error('Server không trả về token hợp lệ.')
-  }
-  localStorage.setItem('drs_token', data.access_token)
-}
-
-export async function register(username: string, password: string, email?: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, email: email || null })
-  })
-
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}))
-    throw new Error(detail.detail || `Đăng ký thất bại (${res.status})`)
-  }
-}
 
