@@ -17,11 +17,12 @@ import {
   Plus,
   Moon,
   Sun,
-  Globe
+  Globe,
+  Edit3
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
 import { useLanguage } from '@/app/i18n'
-import { listChapters, getProject, getChapter, saveChapter, ProjectInfo } from '@/app/api-client'
+import { listChapters, getProject, getChapter, saveChapter, deleteChapter, renameDocument, patchProject, ProjectInfo } from '@/app/api-client'
 import { showToast } from '@/components/toast'
 import { useEffect } from 'react'
 
@@ -48,11 +49,16 @@ export default function ProjectDetails({ params }: PageProps) {
   const [newChapterTitle, setNewChapterTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [activeModal, setActiveModal] = useState<'shared' | 'settings' | null>(null)
+  const [activeDropdownChapter, setActiveDropdownChapter] = useState<string | null>(null)
+  const [editDisplayName, setEditDisplayName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
 
   const loadData = async () => {
     try {
       const info = await getProject(projectId);
       setProjectInfo(info);
+      setEditDisplayName(info.description || '');
+      setEditDescription(info.description || '');
     } catch (err) {
       console.error('Error loading project details info:', err);
     }
@@ -148,6 +154,43 @@ export default function ProjectDetails({ params }: PageProps) {
     }
   };
 
+  const handleSaveSettings = async () => {
+    try {
+      await patchProject(projectId, { display_name: editDisplayName, description: editDescription });
+      showToast("Cập nhật dự án thành công!", "success");
+      await loadData();
+      setActiveModal(null);
+    } catch (err: any) {
+      showToast(`Không thể cập nhật dự án: ${err.message}`, 'error');
+    }
+  };
+
+  const handleDeleteChapter = async (slug: string) => {
+    const confirmMsg = t('deleteDocConfirm').replace('this document', `"${slug}"`).replace('tài liệu này', `"${slug}"`);
+    if (!confirm(confirmMsg)) return;
+    try {
+      await deleteChapter(projectId, slug);
+      showToast('Xóa tài liệu thành công!', 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(`Lỗi khi xóa tài liệu: ${err.message}`, 'error');
+    }
+  };
+
+  const handleRenameChapter = async (slug: string) => {
+    const newName = prompt(t('newDocPrompt') || 'Nhập tên tài liệu mới:', slug);
+    if (!newName || !newName.trim() || newName.trim() === slug) return;
+    const cleanNewName = newName.trim().endsWith('.md') ? newName.trim() : `${newName.trim()}.md`;
+
+    try {
+      await renameDocument(projectId, slug, cleanNewName);
+      showToast('Đổi tên tài liệu thành công!', 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(`Lỗi khi đổi tên tài liệu: ${err.message}`, 'error');
+    }
+  };
+
   const projectName = projectInfo ? (projectInfo.description || (projectInfo.project_id === 'demo_project' ? 'Dự án Dịch thuật' : projectInfo.project_id)) : projectId
 
   const filteredChapters = chapters.filter(c => 
@@ -163,10 +206,10 @@ export default function ProjectDetails({ params }: PageProps) {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-purple to-accent-violet flex items-center justify-center">
-              <span className="text-white font-serif font-bold text-base">d</span>
+              <span className="text-white font-serif font-bold text-base">o</span>
             </div>
-            <span className="font-serif font-bold text-2xl tracking-wide text-white">
-              drs<span className="text-accent-purple">.</span>v3
+            <span className="font-serif font-bold text-2xl tracking-wide text-white relative">
+              oneiros<span className="text-[9px] font-sans font-semibold uppercase tracking-wider text-accent-purple ml-1 absolute -top-1.5 -right-7 px-1.5 py-0.5 rounded-md bg-accent-purple/10">beta</span>
             </span>
           </Link>
 
@@ -233,7 +276,7 @@ export default function ProjectDetails({ params }: PageProps) {
                 <path d="M12 4C8 4 4 8 4 12C4 16 8 20 12 20M12 4L16 8M12 4L8 8M12 20L16 16M12 20L8 16" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <span className="text-[10px] text-slate-650 font-mono">v3.0.4</span>
+            <span className="text-[10px] text-slate-650 font-mono">v1.0.0</span>
           </div>
         </div>
       </aside>
@@ -263,6 +306,13 @@ export default function ProjectDetails({ params }: PageProps) {
               <h1 className="text-2xl font-serif font-bold text-slate-950 dark:text-slate-50 leading-none">
                 {projectName}
               </h1>
+              <button 
+                onClick={() => setActiveModal('settings')}
+                className="p-1 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded transition-colors text-slate-400 hover:text-slate-600"
+                title="Đổi tên dự án"
+              >
+                <Edit3 size={15} />
+              </button>
             </div>
 
             {/* New Button */}
@@ -333,9 +383,45 @@ export default function ProjectDetails({ params }: PageProps) {
                         {chapter.previewText}
                       </p>
                     </Link>
-                    <button className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors text-slate-400 dark:text-slate-500 shrink-0">
-                      <MoreHorizontal size={16} />
-                    </button>
+                    <div className="relative shrink-0">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveDropdownChapter(activeDropdownChapter === chapter.slug ? null : chapter.slug);
+                        }}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors text-slate-400 dark:text-slate-500"
+                      >
+                        <MoreHorizontal size={16} />
+                      </button>
+                      {activeDropdownChapter === chapter.slug && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-10" 
+                            onClick={() => setActiveDropdownChapter(null)}
+                          />
+                          <div className="absolute right-0 mt-1 w-32 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg z-20 py-1 overflow-hidden select-none animate-in fade-in slide-in-from-top-1">
+                            <button
+                              onClick={() => {
+                                handleRenameChapter(chapter.slug);
+                                setActiveDropdownChapter(null);
+                              }}
+                              className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                            >
+                              Đổi tên
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleDeleteChapter(chapter.slug);
+                                setActiveDropdownChapter(null);
+                              }}
+                              className="w-full text-left px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {/* Updated Timestamp at Bottom */}
@@ -440,6 +526,20 @@ export default function ProjectDetails({ params }: PageProps) {
             <p className="text-xs text-themeMuted mb-4">Configure your active localization pipeline settings.</p>
             
             <div className="space-y-4">
+              {/* Project Display Name */}
+              <div>
+                <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-1.5">
+                  Tên hiển thị dự án
+                </label>
+                <input
+                  type="text"
+                  placeholder="Nhập tên hiển thị dự án..."
+                  value={editDisplayName}
+                  onChange={(e) => setEditDisplayName(e.target.value)}
+                  className="w-full px-3 py-2 bg-themeBg border border-themeBorder rounded-xl text-sm focus:outline-none focus:border-accent-purple/50"
+                />
+              </div>
+
               {/* API Configuration */}
               <div>
                 <label className="text-xs font-bold text-themeMuted uppercase tracking-wider block mb-1.5">
@@ -481,7 +581,7 @@ export default function ProjectDetails({ params }: PageProps) {
                   <p className="text-xs text-themeMuted mt-0.5">Manage glossary terms, entities, and style constraints shared across all chapters.</p>
                 </div>
                 <Link
-                  href={`/dashboard/${projectId}/memory`}
+                  href={`/dashboard/${projectId}/memory?from=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '')}`}
                   className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 dark:bg-purple-550 dark:hover:bg-purple-650 text-white rounded-lg text-xs font-semibold transition-colors"
                 >
                   Manage Memory
@@ -497,10 +597,7 @@ export default function ProjectDetails({ params }: PageProps) {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  showToast("Lưu cấu hình thành công!", "success");
-                  setActiveModal(null);
-                }}
+                onClick={handleSaveSettings}
                 className="px-5 py-2 bg-accent-purple hover:bg-accent-purple/90 text-white rounded-xl text-sm font-semibold transition-colors"
               >
                 Save Changes

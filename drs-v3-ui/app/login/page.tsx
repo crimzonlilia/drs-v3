@@ -99,7 +99,7 @@ function LoginForm() {
       <button
         onClick={toggleTheme}
         className="absolute top-6 right-6 p-2.5 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-xl border border-themeBorder backdrop-blur-md transition-colors z-50"
-        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+        title={`Chuyển sang giao diện ${theme === 'light' ? 'tối' : 'sáng'}`}
       >
         {theme === 'light' ? (
           <Moon size={18} className="text-slate-700" />
@@ -113,13 +113,13 @@ function LoginForm() {
         {/* Logo and Greeting */}
         <div className="flex flex-col items-center mb-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-purple to-accent-violet flex items-center justify-center mb-3">
-            <span className="text-white font-serif font-bold text-lg">d</span>
+            <span className="text-white font-serif font-bold text-lg">o</span>
           </div>
-          <h1 className="font-serif font-bold text-2xl tracking-wide text-themeText">
-            drs<span className="text-accent-purple">.</span>v3
+          <h1 className="font-serif font-bold text-2xl tracking-wide text-themeText relative">
+            oneiros<span className="text-[9px] font-sans font-semibold uppercase tracking-wider text-accent-purple ml-1 absolute -top-1.5 -right-7 px-1.5 py-0.5 rounded-md bg-accent-purple/10">beta</span>
           </h1>
           <p className="text-xs text-themeMuted mt-1">
-            {isLogin ? 'Welcome back. Sign in to your workspace.' : 'Create an account to get started.'}
+            {isLogin ? 'Chào mừng quay trở lại. Hãy đăng nhập để bắt đầu làm việc.' : 'Tạo tài khoản mới để bắt đầu.'}
           </p>
         </div>
 
@@ -220,7 +220,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-themeBg text-themeText text-sm">Loading login...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-themeBg text-themeText text-sm">Đang tải trang đăng nhập...</div>}>
       <LoginForm />
     </Suspense>
   )

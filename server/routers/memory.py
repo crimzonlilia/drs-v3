@@ -107,6 +107,12 @@ async def add_glossary_term(project_id: str, data: GlossaryAddInput, current_use
     await verify_project_member(project_id, current_user["id"], "editor")
     
     mem = ProjectMemory(project_id)
+    if data.old_source_term and data.old_source_term != data.source_term:
+        try:
+            mem.glossary.remove_entry(data.old_source_term, data.source_lang, data.target_lang)
+        except Exception:
+            pass
+
     entry = GlossaryEntry(
         source_term=data.source_term,
         target_term=data.target_term,
@@ -153,6 +159,12 @@ async def add_entity_item(project_id: str, data: EntityAddInput, current_user: d
     await verify_project_member(project_id, current_user["id"], "editor")
     
     mem = ProjectMemory(project_id)
+    if data.old_entity_id and data.old_entity_id != data.entity_id:
+        try:
+            mem.entities.remove_entity(data.old_entity_id)
+        except Exception:
+            pass
+
     entity = Entity(
         entity_id=data.entity_id,
         canonical_name=data.canonical_name,
@@ -195,6 +207,12 @@ async def add_style_rule_item(project_id: str, data: StyleRuleAddInput, current_
     await verify_project_member(project_id, current_user["id"], "editor")
     
     mem = ProjectMemory(project_id)
+    if data.old_rule_id and data.old_rule_id != data.rule_id:
+        try:
+            mem.style.remove_rule(data.old_rule_id)
+        except Exception:
+            pass
+
     rule = StyleRule(
         rule_id=data.rule_id,
         category=data.category,

@@ -14,6 +14,7 @@ import {
   X,
   AlertTriangle,
   BookOpen,
+  Sparkles,
   Edit3,
   Paperclip,
   Type,
@@ -999,9 +1000,6 @@ export default function CenterPanel({
       // Update preview to rendered image
       setMangaViewModes(prev => ({ ...prev, [assetId]: 'rendered' }))
       showToast('Đã phê duyệt và vẽ dịch thành công!', 'success')
-      
-      // Auto-trigger Chapter summary modal
-      triggerSummaryModal()
     } catch (err: any) {
       showToast(`Lỗi phê duyệt và vẽ dịch: ${err.message}`, 'error')
       setPipelineStatus(prev => ({ ...prev, render: 'failed' }))
@@ -1021,9 +1019,6 @@ export default function CenterPanel({
         approve: 'success' 
       }))
       showToast('Đã duyệt bản dịch thành công!', 'success')
-      
-      // Auto-trigger Chapter summary modal
-      triggerSummaryModal()
     } catch (err: any) {
       showToast(`Lỗi khi duyệt bản dịch: ${err.message}`, 'error')
     } finally {
@@ -1191,6 +1186,16 @@ export default function CenterPanel({
               <Upload size={12} />
             </label>
           </div>
+
+          {/* Chapter Summary Trigger */}
+          <button 
+            onClick={triggerSummaryModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+            title={t('chapterSummaryTitle')}
+          >
+            <Sparkles size={13} className="text-amber-500 fill-amber-500/20" />
+            <span>{t('chapterSummaryTitle')}</span>
+          </button>
 
           {/* View Source & Approved Translation panel trigger */}
           <button 

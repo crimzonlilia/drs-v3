@@ -12,7 +12,8 @@ import {
   Moon,
   Sun,
   Sparkles,
-  Bookmark
+  Bookmark,
+  Edit3
 } from 'lucide-react'
 import { useTheme } from '@/app/theme-provider'
 import { showToast } from '@/components/toast'
@@ -60,6 +61,81 @@ export default function ProjectMemoryPage({ params }: PageProps) {
   const [gTarget, setGTarget] = useState('')
   const [gNote, setGNote] = useState('')
 
+  const [editingItem, setEditingItem] = useState<{
+    type: 'glossary' | 'entity' | 'style_rule'
+    originalKey: string
+  } | null>(null)
+
+  const [backHref, setBackHref] = useState(`/dashboard/${projectId}`)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const from = params.get('from')
+      if (from) {
+        setBackHref(from)
+      }
+    }
+  }, [projectId])
+
+  const startEditGlossary = (entry: GlossaryEntry) => {
+    setGSource(entry.source_term)
+    setGTarget(entry.target_term)
+    setGNote(entry.context_note || '')
+    setEditingItem({ type: 'glossary', originalKey: entry.source_term })
+    setShowAddGlossary(true)
+  }
+
+  const startEditEntity = (entry: EntityEntry) => {
+    setEId(entry.entity_id)
+    setECanonical(entry.canonical_name)
+    setESource(entry.source_name)
+    setEType(entry.entity_type)
+    setEPronouns(entry.pronouns || '')
+    setENotes(entry.notes || '')
+    setEditingItem({ type: 'entity', originalKey: entry.entity_id })
+    setShowAddEntity(true)
+  }
+
+  const startEditStyleRule = (entry: StyleRuleEntry) => {
+    setRId(entry.rule_id)
+    setRCategory(entry.category)
+    setRDesc(entry.description)
+    setRBefore(entry.example_before || '')
+    setRAfter(entry.example_after || '')
+    setEditingItem({ type: 'style_rule', originalKey: entry.rule_id })
+    setShowAddRule(true)
+  }
+
+  const resetGlossaryForm = () => {
+    setGSource('')
+    setGTarget('')
+    setGNote('')
+    setEditingItem(null)
+    setShowAddGlossary(false)
+  }
+
+  const resetEntityForm = () => {
+    setEId('')
+    setECanonical('')
+    setESource('')
+    setEType('person')
+    setEPronouns('')
+    setENotes('')
+    setEditingItem(null)
+    setShowAddEntity(false)
+  }
+
+  const resetStyleRuleForm = () => {
+    setRId('')
+    setRCategory('')
+    setRDesc('')
+    setRBefore('')
+    setRAfter('')
+    setEditingItem(null)
+    setShowAddRule(false)
+  }
+
   const [eId, setEId] = useState('')
   const [eCanonical, setECanonical] = useState('')
   const [eSource, setESource] = useState('')
@@ -98,34 +174,28 @@ export default function ProjectMemoryPage({ params }: PageProps) {
   const handleAddGlossary = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!gSource.trim() || !gTarget.trim()) return
-    const newEntry: GlossaryEntry = {
-      source_term: gSource.trim(),
-      target_term: gTarget.trim(),
-      source_lang: projectInfo?.source_lang || 'ja',
-      target_lang: projectInfo?.target_lang || 'vi',
-      context_note: gNote.trim() || undefined
-    }
-    
-    // Optimistic Update
-    setGlossary(prev => [...prev, newEntry])
-    setGSource('')
-    setGTarget('')
-    setGNote('')
-    setShowAddGlossary(false)
-    
     try {
-      await addGlossaryTerm(projectId, newEntry)
-      showToast('Đã thêm thuật ngữ thành công!', 'success')
+      const data: any = {
+        source_term: gSource.trim(),
+        target_term: gTarget.trim(),
+        source_lang: projectInfo?.source_lang || 'ja',
+        target_lang: projectInfo?.target_lang || 'vi',
+        context_note: gNote.trim() || undefined
+      }
+      if (editingItem && editingItem.type === 'glossary') {
+        data.old_source_term = editingItem.originalKey
+      }
+      await addGlossaryTerm(projectId, data)
+      showToast(editingItem ? 'Cập nhật thuật ngữ thành công!' : 'Thêm thuật ngữ thành công!', 'success')
+      resetGlossaryForm()
       loadMemory()
     } catch (err) {
-      showToast(`Không thể thêm thuật ngữ: ${err}`, 'error')
-      loadMemory()
+      showToast(`Lỗi: ${err}`, 'error')
     }
   }
 
   const handleDeleteGlossary = async (term: string) => {
     if (!confirm(`Delete glossary term "${term}"?`)) return
-    // Optimistic Update
     setGlossary(prev => prev.filter(g => g.source_term !== term))
     try {
       await deleteGlossaryTerm(
@@ -138,55 +208,37 @@ export default function ProjectMemoryPage({ params }: PageProps) {
       loadMemory()
     } catch (err) {
       showToast(`Không thể xóa thuật ngữ: ${err}`, 'error')
-      loadMemory()
     }
   }
 
-  // Handlers for Entities
   const handleAddEntity = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!eId.trim() || !eCanonical.trim() || !eSource.trim()) return
-    const entityPayload = {
-      entity_id: eId.trim(),
-      canonical_name: eCanonical.trim(),
-      source_name: eSource.trim(),
-      entity_type: eType,
-      source_lang: projectInfo?.source_lang || 'ja',
-      target_lang: projectInfo?.target_lang || 'vi',
-      pronouns: ePronouns.trim() || undefined,
-      notes: eNotes.trim() || undefined
-    }
-    const newEnt: EntityEntry = {
-      entity_id: entityPayload.entity_id,
-      canonical_name: entityPayload.canonical_name,
-      source_name: entityPayload.source_name,
-      entity_type: entityPayload.entity_type,
-      pronouns: entityPayload.pronouns,
-      notes: entityPayload.notes
-    }
-    
-    // Optimistic Update
-    setEntities(prev => [...prev, newEnt])
-    setEId('')
-    setECanonical('')
-    setESource('')
-    setEPronouns('')
-    setENotes('')
-    setShowAddEntity(false)
-    
     try {
-      await addEntity(projectId, entityPayload)
-      showToast('Đã thêm thực thể thành công!', 'success')
+      const data: any = {
+        entity_id: eId.trim(),
+        canonical_name: eCanonical.trim(),
+        source_name: eSource.trim(),
+        entity_type: eType,
+        source_lang: projectInfo?.source_lang || 'ja',
+        target_lang: projectInfo?.target_lang || 'vi',
+        pronouns: ePronouns.trim() || undefined,
+        notes: eNotes.trim() || undefined
+      }
+      if (editingItem && editingItem.type === 'entity') {
+        data.old_entity_id = editingItem.originalKey
+      }
+      await addEntity(projectId, data)
+      showToast(editingItem ? 'Cập nhật thực thể thành công!' : 'Thêm thực thể thành công!', 'success')
+      resetEntityForm()
       loadMemory()
     } catch (err) {
-      showToast(`Không thể thêm thực thể: ${err}`, 'error')
-      loadMemory()
+      showToast(`Lỗi: ${err}`, 'error')
     }
   }
 
   const handleDeleteEntity = async (entityId: string) => {
     if (!confirm(`Delete entity "${entityId}"?`)) return
-    // Optimistic Update
     setEntities(prev => prev.filter(e => e.entity_id !== entityId))
     try {
       await deleteEntity(projectId, entityId)
@@ -198,49 +250,33 @@ export default function ProjectMemoryPage({ params }: PageProps) {
     }
   }
 
-  // Handlers for Style Rules
   const handleAddRule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!rId.trim() || !rCategory.trim() || !rDesc.trim()) return
-    const rulePayload = {
-      rule_id: rId.trim(),
-      category: rCategory.trim(),
-      description: rDesc.trim(),
-      example_before: rBefore.trim() || undefined,
-      example_after: rAfter.trim() || undefined,
-      source_lang: projectInfo?.source_lang || 'ja',
-      target_lang: projectInfo?.target_lang || 'vi'
-    }
-    const newR: StyleRuleEntry = {
-      rule_id: rulePayload.rule_id,
-      category: rulePayload.category,
-      description: rulePayload.description,
-      example_before: rulePayload.example_before,
-      example_after: rulePayload.example_after
-    }
-    
-    // Optimistic Update
-    setStyleRules(prev => [...prev, newR])
-    setRId('')
-    setRCategory('')
-    setRDesc('')
-    setRBefore('')
-    setRAfter('')
-    setShowAddRule(false)
-    
     try {
-      await addStyleRule(projectId, rulePayload)
-      showToast('Đã thêm quy tắc văn phong thành công!', 'success')
+      const data: any = {
+        rule_id: rId.trim(),
+        category: rCategory.trim(),
+        description: rDesc.trim(),
+        example_before: rBefore.trim() || undefined,
+        example_after: rAfter.trim() || undefined,
+        source_lang: projectInfo?.source_lang || 'ja',
+        target_lang: projectInfo?.target_lang || 'vi'
+      }
+      if (editingItem && editingItem.type === 'style_rule') {
+        data.old_rule_id = editingItem.originalKey
+      }
+      await addStyleRule(projectId, data)
+      showToast(editingItem ? 'Cập nhật quy tắc thành công!' : 'Thêm quy tắc thành công!', 'success')
+      resetStyleRuleForm()
       loadMemory()
     } catch (err) {
-      showToast(`Không thể thêm quy tắc: ${err}`, 'error')
-      loadMemory()
+      showToast(`Lỗi: ${err}`, 'error')
     }
   }
 
   const handleDeleteRule = async (ruleId: string) => {
     if (!confirm(`Delete style rule "${ruleId}"?`)) return
-    // Optimistic Update
     setStyleRules(prev => prev.filter(r => r.rule_id !== ruleId))
     try {
       await deleteStyleRule(projectId, ruleId)
@@ -281,18 +317,20 @@ export default function ProjectMemoryPage({ params }: PageProps) {
         <div className="space-y-8">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-purple to-accent-violet flex items-center justify-center">
-              <span className="text-white font-serif font-bold text-base">d</span>
+              <span className="text-white font-serif font-bold text-base">o</span>
             </div>
-            <span className="font-serif font-bold text-2xl tracking-wide text-white">drs.v3</span>
+            <span className="font-serif font-bold text-2xl tracking-wide text-white relative">
+              oneiros<span className="text-[9px] font-sans font-semibold uppercase tracking-wider text-accent-purple ml-1 absolute -top-1.5 -right-7 px-1.5 py-0.5 rounded-md bg-accent-purple/10">beta</span>
+            </span>
           </div>
 
           <nav className="space-y-4">
             <Link
-              href={`/dashboard/${projectId}`}
+              href={backHref}
               className="py-2 px-3 flex items-center gap-3 hover:text-white transition-colors"
             >
               <ArrowLeft size={16} />
-              <span>Back to Documents</span>
+              <span>Quay lại Tài liệu</span>
             </Link>
 
             <div className="h-px bg-slate-800 my-4" />
@@ -303,8 +341,8 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                 activeTab === 'glossary' ? 'bg-slate-900 text-white dark:bg-slate-800' : 'hover:text-white'
               }`}
             >
-              <Bookmark size={16} />
-              <span>Glossary ({glossary.length})</span>
+              <BookOpen size={16} />
+              <span>Thuật ngữ ({glossary.length})</span>
             </button>
 
             <button
@@ -314,7 +352,7 @@ export default function ProjectMemoryPage({ params }: PageProps) {
               }`}
             >
               <Users size={16} />
-              <span>Entities ({entities.length})</span>
+              <span>Nhân vật & Thực thể ({entities.length})</span>
             </button>
 
             <button
@@ -324,7 +362,7 @@ export default function ProjectMemoryPage({ params }: PageProps) {
               }`}
             >
               <Sparkles size={16} />
-              <span>Style Rules ({styleRules.length})</span>
+              <span>Luật phong cách ({styleRules.length})</span>
             </button>
           </nav>
         </div>
@@ -337,16 +375,16 @@ export default function ProjectMemoryPage({ params }: PageProps) {
             {theme === 'light' ? (
               <>
                 <Moon size={18} />
-                <span>Dark Mode</span>
+                <span>Giao diện Tối</span>
               </>
             ) : (
               <>
                 <Sun size={18} className="text-accent-cyan" />
-                <span>Light Mode</span>
+                <span>Giao diện Sáng</span>
               </>
             )}
           </button>
-          <div className="text-[10px] text-slate-600 font-mono pt-4 border-t border-slate-900">v3.0.4</div>
+          <div className="text-[10px] text-slate-650 font-mono pt-4 border-t border-slate-900">v1.0.0</div>
         </div>
       </aside>
 
@@ -355,10 +393,10 @@ export default function ProjectMemoryPage({ params }: PageProps) {
         <header className="px-8 py-6 border-b border-themeBorder bg-white/40 dark:bg-slate-950/20 backdrop-blur-md flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-serif font-bold text-slate-950 dark:text-slate-50">
-              {projectName} &bull; Project Memory
+              {projectName} &bull; Bộ nhớ Dự án
             </h1>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 uppercase tracking-wider">
-              Shared Cache
+              Bộ nhớ chia sẻ
             </span>
           </div>
 
@@ -367,7 +405,7 @@ export default function ProjectMemoryPage({ params }: PageProps) {
               <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder={`Search ${activeTab}...`}
+                placeholder={`Tìm kiếm trong ${activeTab === 'glossary' ? 'thuật ngữ' : activeTab === 'entities' ? 'thực thể' : 'luật phong cách'}...`}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-1.5 w-60 bg-slate-200/40 dark:bg-slate-800/30 border border-slate-300/40 dark:border-slate-700/40 rounded-full text-xs focus:w-80 focus:outline-none focus:border-purple-500/50 transition-all duration-300"
@@ -379,7 +417,7 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                 onClick={() => setShowAddGlossary(true)}
                 className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-full text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
               >
-                <Plus size={14} /> Add term
+                <Plus size={14} /> Thêm thuật ngữ
               </button>
             )}
 
@@ -388,7 +426,7 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                 onClick={() => setShowAddEntity(true)}
                 className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-full text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
               >
-                <Plus size={14} /> Add entity
+                <Plus size={14} /> Thêm thực thể
               </button>
             )}
 
@@ -397,7 +435,7 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                 onClick={() => setShowAddRule(true)}
                 className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-full text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 transition-opacity"
               >
-                <Plus size={14} /> Add rule
+                <Plus size={14} /> Thêm quy tắc
               </button>
             )}
           </div>
@@ -427,12 +465,12 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                   <div className="p-4 rounded-xl bg-themeCard/30 border border-themeBorder flex items-start gap-3 text-xs leading-relaxed text-themeMuted">
                     <BookOpen size={16} className="text-purple-500 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Glossary Memory:</strong> Terminology specified here will be automatically forced by the translation refiner during candidates generation and verified by the checksuite.
+                      <strong>Bộ nhớ Thuật ngữ:</strong> Các thuật ngữ quy định tại đây sẽ tự động được áp dụng cứng trong quá trình dịch thuật của AI Agent và được kiểm tra chéo bởi Consistency Auditor.
                     </div>
                   </div>
 
                   {filteredGlossary.length === 0 ? (
-                    <div className="py-12 text-center text-xs text-themeMuted">No glossary terms matched.</div>
+                    <div className="py-12 text-center text-xs text-themeMuted">Không tìm thấy thuật ngữ nào phù hợp.</div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {filteredGlossary.map((entry) => (
@@ -457,13 +495,22 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                             )}
                           </div>
 
-                          <button
-                            onClick={() => handleDeleteGlossary(entry.source_term)}
-                            className="p-1.5 rounded-lg text-themeMuted hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                            title="Delete term"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => startEditGlossary(entry)}
+                              className="p-1.5 rounded-lg text-themeMuted hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+                              title="Sửa thuật ngữ"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGlossary(entry.source_term)}
+                              className="p-1.5 rounded-lg text-themeMuted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                              title="Xóa thuật ngữ"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -477,12 +524,12 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                   <div className="p-4 rounded-xl bg-themeCard/30 border border-themeBorder flex items-start gap-3 text-xs leading-relaxed text-themeMuted">
                     <Users size={16} className="text-purple-500 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Entity Memory:</strong> Dictates honorifics, pronouns, gender representation, and specific proper names for characters, places, and organizations.
+                      <strong>Bộ nhớ Thực thể & Nhân vật:</strong> Quy định danh xưng, đại từ xưng hô, cách xưng hô và các danh từ riêng cụ thể cho nhân vật, địa danh và tổ chức.
                     </div>
                   </div>
 
                   {filteredEntities.length === 0 ? (
-                    <div className="py-12 text-center text-xs text-themeMuted">No entities matched.</div>
+                    <div className="py-12 text-center text-xs text-themeMuted">Không tìm thấy thực thể nào phù hợp.</div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {filteredEntities.map((ent) => (
@@ -499,12 +546,12 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                                 </span>
                               </div>
                               <div className="text-xs text-themeMuted mt-1">
-                                ID: <span className="font-mono">{ent.entity_id}</span> &bull; Original: {ent.source_name}
+                                ID: <span className="font-mono">{ent.entity_id}</span> &bull; Bản gốc: {ent.source_name}
                               </div>
                             </div>
                             {ent.pronouns && (
                               <div className="text-[11px] font-mono text-purple-600 dark:text-purple-400 bg-purple-500/10 inline-block px-1.5 py-0.5 rounded">
-                                Pronouns: {ent.pronouns}
+                                Đại từ/Danh xưng: {ent.pronouns}
                               </div>
                             )}
                             {ent.notes && (
@@ -514,13 +561,22 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                             )}
                           </div>
 
-                          <button
-                            onClick={() => handleDeleteEntity(ent.entity_id)}
-                            className="p-1.5 rounded-lg text-themeMuted hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                            title="Delete entity"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => startEditEntity(ent)}
+                              className="p-1.5 rounded-lg text-themeMuted hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+                              title="Sửa thực thể"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteEntity(ent.entity_id)}
+                              className="p-1.5 rounded-lg text-themeMuted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                              title="Xóa thực thể"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -534,12 +590,12 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                   <div className="p-4 rounded-xl bg-themeCard/30 border border-themeBorder flex items-start gap-3 text-xs leading-relaxed text-themeMuted">
                     <Sparkles size={16} className="text-purple-500 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Style Rules Memory:</strong> Enforces grammatical rules, tone constraints, punctuation guidelines, and bans certain words or constructions from final publications.
+                      <strong>Bộ nhớ Luật phong cách:</strong> Áp dụng các quy tắc ngữ pháp, ràng buộc về giọng điệu, hướng dẫn dấu câu và cấm một số từ ngữ hoặc cấu trúc câu nhất định trong bản dịch cuối.
                     </div>
                   </div>
 
                   {filteredStyleRules.length === 0 ? (
-                    <div className="py-12 text-center text-xs text-themeMuted">No style rules matched.</div>
+                    <div className="py-12 text-center text-xs text-themeMuted">Không tìm thấy luật phong cách nào phù hợp.</div>
                   ) : (
                     <div className="space-y-4">
                       {filteredStyleRules.map((rule) => (
@@ -559,24 +615,33 @@ export default function ProjectMemoryPage({ params }: PageProps) {
                             {(rule.example_before || rule.example_after) && (
                               <div className="grid grid-cols-2 gap-4 bg-themeBg/40 p-3 rounded-lg text-xs leading-relaxed font-mono">
                                 <div>
-                                  <div className="text-[9px] uppercase font-bold text-red-500 mb-1">Before / Avoid</div>
+                                  <div className="text-[9px] uppercase font-bold text-red-500 mb-1">Trước / Cần tránh</div>
                                   <div className="text-red-700 dark:text-red-400">{rule.example_before || '—'}</div>
                                 </div>
                                 <div>
-                                  <div className="text-[9px] uppercase font-bold text-emerald-500 mb-1">After / Preferred</div>
+                                  <div className="text-[9px] uppercase font-bold text-emerald-500 mb-1">Sau / Khuyên dùng</div>
                                   <div className="text-emerald-700 dark:text-emerald-400">{rule.example_after || '—'}</div>
                                 </div>
                               </div>
                             )}
                           </div>
 
-                          <button
-                            onClick={() => handleDeleteRule(rule.rule_id)}
-                            className="p-1.5 rounded-lg text-themeMuted hover:text-red-500 hover:bg-red-500/10 transition-colors shrink-0 ml-4"
-                            title="Delete rule"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0 ml-4">
+                            <button
+                              onClick={() => startEditStyleRule(rule)}
+                              className="p-1.5 rounded-lg text-themeMuted hover:text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+                              title="Sửa quy tắc"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRule(rule.rule_id)}
+                              className="p-1.5 rounded-lg text-themeMuted hover:text-red-500 hover:bg-red-500/10 transition-colors shrink-0 ml-4"
+                              title="Xóa quy tắc"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -592,47 +657,47 @@ export default function ProjectMemoryPage({ params }: PageProps) {
       {showAddGlossary && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <form onSubmit={handleAddGlossary} className="bg-themeCard border border-themeBorder rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in text-themeText space-y-4">
-            <h3 className="text-lg font-serif font-bold">Add Glossary Term</h3>
+            <h3 className="text-lg font-serif font-bold">{editingItem ? 'Chỉnh sửa Thuật ngữ' : 'Thêm Thuật ngữ mới'}</h3>
             
             <div className="space-y-3">
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Source Term ({projectInfo?.source_lang || 'ja'})</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Từ nguồn ({projectInfo?.source_lang || 'ja'})</label>
                 <input
                   type="text"
                   required
                   value={gSource}
                   onChange={(e) => setGSource(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2 text-xs"
-                  placeholder="e.g. 仲間"
+                  placeholder="Ví dụ: 仲間"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Approved Translation ({projectInfo?.target_lang || 'vi'})</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Bản dịch được duyệt ({projectInfo?.target_lang || 'vi'})</label>
                 <input
                   type="text"
                   required
                   value={gTarget}
                   onChange={(e) => setGTarget(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2 text-xs"
-                  placeholder="e.g. Đồng đội"
+                  placeholder="Ví dụ: Đồng đội"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Context Note (Optional)</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Ghi chú ngữ cảnh (Không bắt buộc)</label>
                 <textarea
                   value={gNote}
                   onChange={(e) => setGNote(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2 text-xs resize-none h-16"
-                  placeholder="e.g. Chỉ sử dụng trong bối cảnh thân mật giữa các nhân vật chính."
+                  placeholder="Ví dụ: Chỉ sử dụng trong bối cảnh thân mật giữa các nhân vật chính."
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => setShowAddGlossary(false)} className="px-4 py-1.5 text-xs">Cancel</button>
-              <button type="submit" className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-lg text-xs font-semibold">Add</button>
+              <button type="button" onClick={resetGlossaryForm} className="px-4 py-1.5 text-xs">Hủy</button>
+              <button type="submit" className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-lg text-xs font-semibold">{editingItem ? 'Lưu thay đổi' : 'Thêm mới'}</button>
             </div>
           </form>
         </div>
@@ -642,84 +707,85 @@ export default function ProjectMemoryPage({ params }: PageProps) {
       {showAddEntity && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <form onSubmit={handleAddEntity} className="bg-themeCard border border-themeBorder rounded-2xl w-full max-w-md p-6 shadow-2xl animate-fade-in text-themeText space-y-4">
-            <h3 className="text-lg font-serif font-bold">Add Project Entity</h3>
+            <h3 className="text-lg font-serif font-bold">{editingItem ? 'Chỉnh sửa Thực thể' : 'Thêm Thực thể mới'}</h3>
             
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="col-span-2">
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Entity ID (Unique)</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Mã định danh thực thể (ID duy nhất)</label>
                 <input
                   type="text"
                   required
+                  disabled={!!editingItem}
                   value={eId}
                   onChange={(e) => setEId(e.target.value)}
-                  className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2"
-                  placeholder="e.g. char_lilia"
+                  className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2 disabled:opacity-50"
+                  placeholder="Ví dụ: char_lilia"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Canonical Name</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Tên chuẩn hóa (Canonical Name)</label>
                 <input
                   type="text"
                   required
                   value={eCanonical}
                   onChange={(e) => setECanonical(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2"
-                  placeholder="e.g. Lilia"
+                  placeholder="Ví dụ: Lilia"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Original Name</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Tên gốc (Original Name)</label>
                 <input
                   type="text"
                   required
                   value={eSource}
                   onChange={(e) => setESource(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2"
-                  placeholder="e.g. リリア"
+                  placeholder="Ví dụ: リリア"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Type</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Loại thực thể</label>
                 <select
                   value={eType}
                   onChange={(e) => setEType(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2"
                 >
-                  <option value="person">Person (Nhân vật)</option>
-                  <option value="location">Location (Địa danh)</option>
-                  <option value="organization">Organization (Tổ chức)</option>
-                  <option value="item">Object/Item (Vật phẩm)</option>
+                  <option value="person">Nhân vật (Person)</option>
+                  <option value="location">Địa danh (Location)</option>
+                  <option value="organization">Tổ chức (Organization)</option>
+                  <option value="item">Vật phẩm / Đồ vật (Item)</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Pronouns (Optional)</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Đại từ nhân xưng (Không bắt buộc)</label>
                 <input
                   type="text"
                   value={ePronouns}
                   onChange={(e) => setEPronouns(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2"
-                  placeholder="e.g. cô ấy / she"
+                  placeholder="Ví dụ: cô ấy / she"
                 />
               </div>
 
               <div className="col-span-2">
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Entity Notes</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Mô tả / Ghi chú thực thể</label>
                 <textarea
                   value={eNotes}
                   onChange={(e) => setENotes(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2 resize-none h-16"
-                  placeholder="e.g. Công chúa vùng Crimzon, tính cách hướng ngoại."
+                  placeholder="Ví dụ: Công chúa vùng Crimzon, tính cách hướng ngoại."
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => setShowAddEntity(false)} className="px-4 py-1.5 text-xs">Cancel</button>
-              <button type="submit" className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-lg text-xs font-semibold">Add</button>
+              <button type="button" onClick={resetEntityForm} className="px-4 py-1.5 text-xs">Hủy</button>
+              <button type="submit" className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-lg text-xs font-semibold">{editingItem ? 'Lưu thay đổi' : 'Thêm mới'}</button>
             </div>
           </form>
         </div>
@@ -729,69 +795,70 @@ export default function ProjectMemoryPage({ params }: PageProps) {
       {showAddRule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <form onSubmit={handleAddRule} className="bg-themeCard border border-themeBorder rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-fade-in text-themeText space-y-4">
-            <h3 className="text-lg font-serif font-bold">Add Style Rule</h3>
+            <h3 className="text-lg font-serif font-bold">{editingItem ? 'Chỉnh sửa Luật phong cách' : 'Thêm Luật phong cách mới'}</h3>
             
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Rule ID (Unique)</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Mã luật phong cách (ID duy nhất)</label>
                 <input
                   type="text"
                   required
+                  disabled={!!editingItem}
                   value={rId}
                   onChange={(e) => setRId(e.target.value)}
-                  className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2"
-                  placeholder="e.g. rule_polite_pronoun"
+                  className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2 disabled:opacity-50"
+                  placeholder="Ví dụ: rule_polite_pronoun"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Category / Label</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Phân loại / Nhãn</label>
                 <input
                   type="text"
                   required
                   value={rCategory}
                   onChange={(e) => setRCategory(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2"
-                  placeholder="e.g. Pronouns"
+                  placeholder="Ví dụ: Đại từ nhân xưng"
                 />
               </div>
 
               <div className="col-span-2">
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Rule Description</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Mô tả luật phong cách</label>
                 <input
                   type="text"
                   required
                   value={rDesc}
                   onChange={(e) => setRDesc(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2"
-                  placeholder="e.g. Dùng kính ngữ và đại từ trang trọng khi nhân vật trò chuyện với cổ đông."
+                  placeholder="Ví dụ: Dùng kính ngữ và đại từ trang trọng khi nhân vật trò chuyện với cổ đông."
                 />
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Avoid Example (Before)</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Ví dụ cần tránh (Trước)</label>
                 <textarea
                   value={rBefore}
                   onChange={(e) => setRBefore(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2 resize-none h-16"
-                  placeholder="e.g. Tao gửi cho tụi mày bản báo cáo"
+                  placeholder="Ví dụ: Tao gửi cho tụi mày bản báo cáo"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Preferred Example (After)</label>
+                <label className="text-[10px] uppercase font-bold text-themeMuted block mb-1">Ví dụ khuyên dùng (Sau)</label>
                 <textarea
                   value={rAfter}
                   onChange={(e) => setRAfter(e.target.value)}
                   className="w-full rounded-xl bg-themeBg border border-themeBorder px-3 py-2 resize-none h-16"
-                  placeholder="e.g. Kính gửi Quý Cổ đông bản báo cáo tài chính"
+                  placeholder="Ví dụ: Kính gửi Quý Cổ đông bản báo cáo tài chính"
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => setShowAddRule(false)} className="px-4 py-1.5 text-xs">Cancel</button>
-              <button type="submit" className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-lg text-xs font-semibold">Add</button>
+              <button type="button" onClick={resetStyleRuleForm} className="px-4 py-1.5 text-xs">Hủy</button>
+              <button type="submit" className="px-4 py-1.5 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 rounded-lg text-xs font-semibold">{editingItem ? 'Lưu thay đổi' : 'Thêm mới'}</button>
             </div>
           </form>
         </div>

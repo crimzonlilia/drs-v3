@@ -13,23 +13,23 @@ export default function LandingHeader() {
       {/* Logo */}
       <Link href="/" className="flex items-center gap-2">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-purple to-accent-violet flex items-center justify-center">
-          <span className="text-white font-serif font-bold text-base">d</span>
+          <span className="text-white font-serif font-bold text-base">o</span>
         </div>
-        <span className="font-serif font-bold text-2xl tracking-wide text-themeText">
-          drs<span className="text-accent-purple">.</span>v3
+        <span className="font-serif font-bold text-2xl tracking-wide text-themeText relative">
+          oneiros<span className="text-[9px] font-sans font-semibold uppercase tracking-wider text-accent-purple ml-1 absolute -top-1.5 -right-7 px-1.5 py-0.5 rounded-md bg-accent-purple/10">beta</span>
         </span>
       </Link>
 
       {/* Center Links */}
       <nav className="hidden md:flex items-center gap-8">
         <Link href="#features" className="text-sm font-medium text-themeMuted hover:text-accent-purple dark:hover:text-accent-violet transition-colors">
-          Features
+          Tính năng
         </Link>
         <Link href="#pipeline" className="text-sm font-medium text-themeMuted hover:text-accent-purple dark:hover:text-accent-violet transition-colors">
-          Workflow
+          Quy trình
         </Link>
         <Link href="#about" className="text-sm font-medium text-themeMuted hover:text-accent-purple dark:hover:text-accent-violet transition-colors">
-          About
+          Giới thiệu
         </Link>
       </nav>
 
@@ -39,7 +39,7 @@ export default function LandingHeader() {
         <button
           onClick={toggleTheme}
           className="p-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-lg transition-colors"
-          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          title={`Chuyển sang giao diện ${theme === 'light' ? 'tối' : 'sáng'}`}
         >
           {theme === 'light' ? (
             <Moon size={18} className="text-slate-700" />
@@ -48,10 +48,10 @@ export default function LandingHeader() {
           )}
         </button>
         <Link href="/login" className="px-4 py-2 border border-themeBorder rounded-lg text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-themeText">
-          Log in
+          Đăng nhập
         </Link>
         <Link href="/login?mode=register" className="px-4 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-lg text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors">
-          Sign up
+          Đăng ký
         </Link>
       </div>
     </header>

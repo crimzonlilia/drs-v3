@@ -16,8 +16,8 @@ const playfair = Playfair_Display({
 })
 
 export const metadata: Metadata = {
-  title: 'DRS v3 - Document Revision & Steering Hub',
-  description: 'Premium translation workspace for document revision and steering',
+  title: 'Oneiros - Nền tảng Dịch thuật & Bản địa hóa chuyên nghiệp',
+  description: 'Hệ thống dịch thuật và bản địa hóa thông minh có nhận thức ngữ cảnh cho truyện tranh, sách và tiểu thuyết.',
 }
 
 export default function RootLayout({

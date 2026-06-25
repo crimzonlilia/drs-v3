@@ -80,7 +80,7 @@ export default function TopNavigation({
       <div className="flex items-center gap-2">
         {projectId && (
           <Link
-            href={`/dashboard/${projectId}/memory`}
+            href={`/dashboard/${projectId}/memory?from=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '')}`}
             className="px-2.5 py-1.5 rounded-md border border-themeBorder text-xs font-medium text-themeText hover:bg-themeCard transition-colors"
             title={t('projectMemoryTooltip')}
           >

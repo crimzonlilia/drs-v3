@@ -171,10 +171,10 @@ export default function DashboardHome() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-purple to-accent-violet flex items-center justify-center">
-              <span className="text-white font-serif font-bold text-base">d</span>
+              <span className="text-white font-serif font-bold text-base">o</span>
             </div>
-            <span className="font-serif font-bold text-2xl tracking-wide text-white">
-              drs<span className="text-accent-purple">.</span>v3
+            <span className="font-serif font-bold text-2xl tracking-wide text-white relative">
+              oneiros<span className="text-[9px] font-sans font-semibold uppercase tracking-wider text-accent-purple ml-1 absolute -top-1.5 -right-7 px-1.5 py-0.5 rounded-md bg-accent-purple/10">beta</span>
             </span>
           </Link>
 
@@ -244,7 +244,7 @@ export default function DashboardHome() {
                 <path d="M12 4C8 4 4 8 4 12C4 16 8 20 12 20M12 4L16 8M12 4L8 8M12 20L16 16M12 20L8 16" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <span className="text-[10px] text-slate-650 font-mono">v3.0.4</span>
+            <span className="text-[10px] text-slate-650 font-mono">v1.0.0</span>
           </div>
         </div>
       </aside>

@@ -51,22 +51,22 @@ export default function Home() {
 
         {/* Headline */}
         <h1 className="text-5xl md:text-7xl font-serif tracking-tight leading-[1.1] mb-6 max-w-4xl text-themeText">
-          Write like a human<span className="text-accent-purple">.</span>
+          Dịch thuật tự nhiên, trọn vẹn văn phong<span className="text-accent-purple">.</span>
         </h1>
 
         {/* Sub-headline */}
         <p className="text-lg md:text-xl text-themeText/70 max-w-2xl mb-10 leading-relaxed font-sans">
-          DRS v3 is a memory-aware collaborative translation and localization platform made for professional documentation, books, and creative writing.
+          Oneiros là nền tảng dịch thuật và bản địa hóa thông minh có nhận thức ngữ cảnh, được thiết kế chuyên biệt cho tài liệu chuyên nghiệp, truyện tranh, tiểu thuyết và các tác phẩm sáng tạo.
         </p>
 
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row gap-4 mb-16">
           <Link href="/dashboard" className="px-8 py-4 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-base font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 shadow-lg hover:shadow-purple-500/10 transition-all flex items-center justify-center gap-2">
-            Explore Dashboard
+            Khám phá Bảng điều khiển
             <ArrowRight size={18} />
           </Link>
           <Link href="/login?mode=register" className="px-8 py-4 glass border border-themeBorder rounded-xl text-base font-semibold hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors text-themeText">
-            Join for free
+            Tham gia miễn phí
           </Link>
         </div>
 
@@ -80,9 +80,9 @@ export default function Home() {
       <section id="features" className="w-full bg-themeCard/30 py-24 border-t border-themeBorder relative z-10 transition-colors duration-300">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-5xl font-serif font-bold mb-4">Powerful Features</h2>
+            <h2 className="text-3xl md:text-5xl font-serif font-bold mb-4">Tính năng nổi bật</h2>
             <p className="text-themeMuted max-w-xl mx-auto text-sm md:text-base">
-              Explore the advanced translation workflow tools engineered specifically for localization pipelines.
+              Khám phá bộ công cụ dịch thuật nâng cao được thiết kế chuyên biệt cho quy trình bản địa hóa chuyên nghiệp.
             </p>
           </div>
 
@@ -92,9 +92,9 @@ export default function Home() {
               <div className="w-12 h-12 rounded-xl bg-accent-purple/10 dark:bg-accent-purple/20 flex items-center justify-center text-accent-purple dark:text-accent-violet mb-6 group-hover:scale-110 transition-transform">
                 <BookOpen size={24} />
               </div>
-              <h3 className="text-lg font-bold mb-3">Memory-Aware Pipeline</h3>
+              <h3 className="text-lg font-bold mb-3">Nhận thức Ngữ cảnh</h3>
               <p className="text-sm text-themeMuted leading-relaxed">
-                Automatically seed context using Fandom memory, loading glossaries, specific term guidelines, and project settings dynamically.
+                Tự động tối ưu hóa ngữ cảnh bản dịch bằng cách nạp bộ nhớ Fandom, thuật ngữ glossary, quy tắc danh xưng nhân vật và cấu hình dự án một cách linh hoạt.
               </p>
             </div>
 
@@ -103,9 +103,9 @@ export default function Home() {
               <div className="w-12 h-12 rounded-xl bg-accent-cyan/10 dark:bg-accent-cyan/20 flex items-center justify-center text-accent-cyan mb-6 group-hover:scale-110 transition-transform">
                 <Bot size={24} />
               </div>
-              <h3 className="text-lg font-bold mb-3">Double AI Review</h3>
+              <h3 className="text-lg font-bold mb-3">Kiểm duyệt Kép bằng AI</h3>
               <p className="text-sm text-themeMuted leading-relaxed">
-                Generate draft candidates, run consistency check suites, and pass translations through a dedicated LLM reviewer for optimal flow.
+                Tự động sinh các phương án dịch nháp, chạy quét lỗi bằng hệ thống đánh giá tính nhất quán và hoàn thiện câu từ qua AI kiểm duyệt chuyên biệt.
               </p>
             </div>
 
@@ -114,9 +114,9 @@ export default function Home() {
               <div className="w-12 h-12 rounded-xl bg-accent-purple/10 dark:bg-accent-purple/20 flex items-center justify-center text-accent-purple dark:text-accent-violet mb-6 group-hover:scale-110 transition-transform">
                 <Layers size={24} />
               </div>
-              <h3 className="text-lg font-bold mb-3">Approval Gate</h3>
+              <h3 className="text-lg font-bold mb-3">Chốt duyệt & Đóng góp từ</h3>
               <p className="text-sm text-themeMuted leading-relaxed">
-                Manage translation approvals and promote terms to the project glossary seamlessly directly from the interactive editor workspace.
+                Phê duyệt nhanh các câu dịch, đồng thời dễ dàng thêm các thuật ngữ mới vào glossary của dự án trực tiếp từ không gian làm việc của biên tập viên.
               </p>
             </div>
           </div>
@@ -127,9 +127,9 @@ export default function Home() {
       <section id="pipeline" className="w-full py-24 border-t border-themeBorder relative z-10">
         <div className="max-w-4xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-5xl font-serif font-bold mb-4">Precision Translation Pipeline</h2>
+            <h2 className="text-3xl md:text-5xl font-serif font-bold mb-4">Quy trình Dịch thuật Chuẩn xác</h2>
             <p className="text-themeMuted max-w-lg mx-auto text-sm md:text-base">
-              A comprehensive three-stage flow built to ensure absolute terminological consistency and stylistic elegance.
+              Quy trình ba giai đoạn toàn diện đảm bảo sự nhất quán tuyệt đối về thuật ngữ và sự thanh thoát trong văn phong.
             </p>
           </div>
 
@@ -140,9 +140,9 @@ export default function Home() {
                 1
               </div>
               <div>
-                <h3 className="text-lg font-bold mb-2">Step 1 — Source Seeding & Generation</h3>
+                <h3 className="text-lg font-bold mb-2">Bước 1 — Phân tích ngữ cảnh & Sinh bản dịch</h3>
                 <p className="text-sm text-themeMuted leading-relaxed">
-                  Incorporate live memory constraints, evaluate text variables, and produce several high-quality translation candidate drafts.
+                  Tích hợp các ràng buộc từ bộ nhớ dự án, đánh giá các biến ngữ cảnh và tạo ra các bản dịch nháp ứng viên chất lượng cao.
                 </p>
               </div>
             </div>
@@ -153,9 +153,9 @@ export default function Home() {
                 2
               </div>
               <div>
-                <h3 className="text-lg font-bold mb-2">Step 2 — Automatic Consistency Checks</h3>
+                <h3 className="text-lg font-bold mb-2">Bước 2 — Tự động Kiểm tra Nhất quán</h3>
                 <p className="text-sm text-themeMuted leading-relaxed">
-                  Automatically verify style parameters, honorific formats, and specific glossary constraints to flag discrepancies immediately.
+                  Tự động quét và đối chiếu các quy chuẩn văn phong, cách xưng hô của nhân vật và thuật ngữ glossary để phát hiện sai lệch ngay lập tức.
                 </p>
               </div>
             </div>
@@ -166,9 +166,9 @@ export default function Home() {
                 3
               </div>
               <div>
-                <h3 className="text-lg font-bold mb-2">Step 3 — Interactive Review & Promotion</h3>
+                <h3 className="text-lg font-bold mb-2">Bước 3 — Biên tập & Duyệt bản dịch</h3>
                 <p className="text-sm text-themeMuted leading-relaxed">
-                  Edit draft variants with side-by-side context, implement visual preview layout checks, and directly promote edits into core glossary tables.
+                  Chỉnh sửa các phương án dịch song song trực quan với văn bản gốc, kiểm tra bố cục trang và trực tiếp đồng bộ các từ khóa mới vào từ điển hệ thống.
                 </p>
               </div>
             </div>
@@ -179,7 +179,7 @@ export default function Home() {
       {/* Footer */}
       <footer id="about" className="w-full py-12 border-t border-themeBorder text-center relative z-10">
         <p className="text-xs text-themeMuted/50">
-          &copy; {new Date().getFullYear()} DRS v3. Built with Next.js, Vercel & AI.
+          &copy; {new Date().getFullYear()} Oneiros. Phát triển trên nền Next.js & Trí tuệ nhân tạo.
         </p>
       </footer>
     </div>

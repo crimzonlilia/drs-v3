@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, Fil
 from fastapi.responses import StreamingResponse
 
 from core.memory import ProjectMemory
-from server.schemas import ProjectCreate, ProjectInfo
+from server.schemas import ProjectCreate, ProjectInfo, ProjectUpdate, DocumentRename
 from server.auth import get_current_user
 from core.utils.db import execute_query
 from core.utils.r2 import read_text, write_text, list_files, write_binary, read_binary, delete_file
@@ -136,6 +136,57 @@ async def get_project(project_id: str, current_user: dict = Depends(get_current_
         content_type=proj["content_type"],
         tone_note=tone_note
     )
+
+
+@router.patch("/{project_id}", response_model=ProjectInfo)
+async def patch_project(
+    project_id: str,
+    data: ProjectUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update project metadata (display_name and description).
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    # 1. Update SQLite D1 projects table
+    await execute_query(
+        "UPDATE projects SET display_name = ?, description = ? WHERE id = ?",
+        [data.display_name, data.description, project_id]
+    )
+    
+    # 2. Load existing YAML from R2, update it, and write it back
+    tone_note = ""
+    config_path = f"projects/{project_id}/project.yaml"
+    config_content = read_text(config_path)
+    config_data = {}
+    if config_content:
+        try:
+            config_data = yaml.safe_load(config_content) or {}
+            tone_note = config_data.get("tone_note", "")
+        except Exception:
+            pass
+            
+    config_data["display_name"] = data.display_name
+    config_data["description"] = data.description
+    
+    write_text(config_path, yaml.dump(config_data, allow_unicode=True))
+    
+    # 3. Retrieve updated info
+    rows = await execute_query("SELECT * FROM projects WHERE id = ?", [project_id])
+    if not rows:
+        raise HTTPException(status_code=404, detail="Project not found")
+    proj = rows[0]
+    
+    return ProjectInfo(
+        project_id=proj["id"],
+        description=proj.get("description", ""),
+        source_lang=proj["source_lang"],
+        target_lang=proj["target_lang"],
+        content_type=proj["content_type"],
+        tone_note=tone_note
+    )
+
 
 
 @router.get("/{project_id}/docs", response_model=List[str])
@@ -333,6 +384,12 @@ async def save_doc_content(
                 actual_doc_id,
                 approved_content
             )
+            background_tasks.add_task(
+                auto_generate_and_save_summary,
+                project_id,
+                actual_doc_id,
+                approved_content
+            )
         
     return {"status": "success", "message": "Document saved successfully"}
 
@@ -374,6 +431,92 @@ async def delete_project_doc(
     )
     
     return {"status": "success", "message": f"Document {actual_doc_id} deleted successfully"}
+
+
+@router.post("/{project_id}/docs/{doc_id}/rename")
+@router.post("/{project_id}/chapters/{doc_id}/rename")
+async def rename_document(
+    project_id: str,
+    doc_id: str,
+    data: DocumentRename,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Rename a document/chapter. Renames its R2 prefix and updates references in D1.
+    """
+    await verify_project_member(project_id, current_user["id"], "editor")
+    
+    new_doc_id = data.new_doc_id.strip()
+    if not new_doc_id:
+        raise HTTPException(status_code=400, detail="Invalid new document ID")
+        
+    if new_doc_id == doc_id:
+        return {"status": "success", "message": "Document name is unchanged"}
+        
+    old_prefix = f"projects/{project_id}/docs/{doc_id}/"
+    new_prefix = f"projects/{project_id}/docs/{new_doc_id}/"
+    
+    # Check if target already exists by listing its files
+    existing_files = list_files(new_prefix)
+    if existing_files:
+        raise HTTPException(status_code=400, detail="A document with the new name already exists")
+        
+    # 1. Copy files in R2 from old_prefix to new_prefix, then delete old files
+    old_files = list_files(old_prefix)
+    if not old_files:
+        raise HTTPException(status_code=404, detail="Document files not found")
+        
+    for old_file in old_files:
+        new_file = old_file.replace(old_prefix, new_prefix, 1)
+        # Read the file from R2 and write to the new key
+        file_bytes = read_binary(old_file)
+        if file_bytes is not None:
+            write_binary(new_file, file_bytes)
+            delete_file(old_file)
+            
+    # 2. Also rename the master index YAML file if it exists in R2
+    old_index_file = f"projects/{project_id}/memory/master_index/{doc_id}.yaml"
+    new_index_file = f"projects/{project_id}/memory/master_index/{new_doc_id}.yaml"
+    index_bytes = read_binary(old_index_file)
+    if index_bytes is not None:
+        write_binary(new_index_file, index_bytes)
+        delete_file(old_index_file)
+        
+    # 3. Update references in SQLite D1 tables
+    # tables: segments, chat_history, chapter_summaries, assets, knowledge_base
+    
+    # segments
+    await execute_query(
+        "UPDATE segments SET doc_id = ? WHERE project_id = ? AND doc_id = ?",
+        [new_doc_id, project_id, doc_id]
+    )
+    
+    # chat_history
+    await execute_query(
+        "UPDATE chat_history SET doc_id = ? WHERE project_id = ? AND doc_id = ?",
+        [new_doc_id, project_id, doc_id]
+    )
+    
+    # chapter_summaries
+    await execute_query(
+        "UPDATE chapter_summaries SET chapter_id = ? WHERE project_id = ? AND chapter_id = ?",
+        [new_doc_id, project_id, doc_id]
+    )
+    
+    # assets (update doc_id and replace old prefix in r2_path)
+    await execute_query(
+        "UPDATE assets SET doc_id = ?, r2_path = REPLACE(r2_path, 'docs/' || ? || '/', 'docs/' || ? || '/') WHERE project_id = ? AND doc_id = ?",
+        [new_doc_id, doc_id, new_doc_id, project_id, doc_id]
+    )
+    
+    # knowledge_base
+    await execute_query(
+        "UPDATE knowledge_base SET doc_id = ? WHERE project_id = ? AND doc_id = ?",
+        [new_doc_id, project_id, doc_id]
+    )
+    
+    return {"status": "success", "message": f"Document successfully renamed from {doc_id} to {new_doc_id}"}
+
 
 
 @router.post("/{project_id}/rebuild-index")
@@ -711,4 +854,36 @@ async def delete_kb_document(
         [project_id, doc_id]
     )
     return {"status": "success", "message": f"Document '{doc_id}' successfully deleted from knowledge base"}
+
+
+async def auto_generate_and_save_summary(project_id: str, doc_id: str, approved_content: str):
+    try:
+        from core.agents.candidate_generator import CandidateGenerator
+        from core.memory import ProjectMemory
+        from core.utils.db import execute_query
+        
+        proj_mem = ProjectMemory(project_id, "ja", "vi")
+        async with CandidateGenerator(proj_mem) as generator:
+            system_prompt = (
+                "You are a professional editor. Summarize the following chapter translation in exactly 2 to 3 concise Vietnamese sentences. "
+                "Focus only on key plot events, character developments, and major changes. Do not include introductory phrases like 'Chương này kể về...'. "
+                "Write the summary directly in Vietnamese."
+            )
+            summary = await generator.chat(system_prompt=system_prompt, message=approved_content)
+            
+        summary_text = summary.strip()
+        if summary_text:
+            sql = """
+            INSERT OR REPLACE INTO chapter_summaries (project_id, chapter_id, summary_text, created_at)
+            VALUES (?, ?, ?, ?)
+            """
+            await execute_query(sql, [
+                project_id,
+                doc_id,
+                summary_text,
+                datetime.now().isoformat()
+            ])
+    except Exception as e:
+        print(f"Failed to auto-generate and save chapter summary: {e}")
+
 

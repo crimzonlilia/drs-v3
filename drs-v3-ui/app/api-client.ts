@@ -310,7 +310,7 @@ export async function refineTranslation(sessionId: string, instruction: string):
   });
 }
 
-export async function addGlossaryTerm(projectId: string, data: { source_term: string; target_term: string; source_lang: string; target_lang: string; context_note?: string }): Promise<any> {
+export async function addGlossaryTerm(projectId: string, data: { source_term: string; target_term: string; source_lang: string; target_lang: string; context_note?: string; old_source_term?: string }): Promise<any> {
   return await apiFetch(`/api/memory/${projectId}/glossary`, {
     method: 'POST',
     body: JSON.stringify(data)
@@ -323,7 +323,7 @@ export async function deleteGlossaryTerm(projectId: string, sourceLang: string, 
   });
 }
 
-export async function addEntity(projectId: string, data: { entity_id: string; canonical_name: string; source_name: string; entity_type: string; source_lang: string; target_lang: string; pronouns?: string; notes?: string }): Promise<any> {
+export async function addEntity(projectId: string, data: { entity_id: string; canonical_name: string; source_name: string; entity_type: string; source_lang: string; target_lang: string; pronouns?: string; notes?: string; old_entity_id?: string }): Promise<any> {
   return await apiFetch(`/api/memory/${projectId}/entities`, {
     method: 'POST',
     body: JSON.stringify(data)
@@ -336,7 +336,7 @@ export async function deleteEntity(projectId: string, entityId: string): Promise
   });
 }
 
-export async function addStyleRule(projectId: string, data: { rule_id: string; category: string; description: string; example_before?: string; example_after?: string; source_lang?: string; target_lang?: string }): Promise<any> {
+export async function addStyleRule(projectId: string, data: { rule_id: string; category: string; description: string; example_before?: string; example_after?: string; source_lang?: string; target_lang?: string; old_rule_id?: string }): Promise<any> {
   return await apiFetch(`/api/memory/${projectId}/style-rules`, {
     method: 'POST',
     body: JSON.stringify(data)
@@ -346,6 +346,20 @@ export async function addStyleRule(projectId: string, data: { rule_id: string; c
 export async function deleteStyleRule(projectId: string, ruleId: string): Promise<any> {
   return await apiFetch(`/api/memory/${projectId}/style-rules/${ruleId}`, {
     method: 'DELETE'
+  });
+}
+
+export async function patchProject(projectId: string, data: { display_name: string; description?: string }): Promise<any> {
+  return await apiFetch(`/api/projects/${projectId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data)
+  });
+}
+
+export async function renameDocument(projectId: string, docId: string, newDocId: string): Promise<any> {
+  return await apiFetch(`/api/projects/${projectId}/docs/${docId}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ new_doc_id: newDocId })
   });
 }
 
@@ -710,5 +724,39 @@ export async function uploadProjectFont(projectId: string, file: File): Promise<
   return await res.json();
 }
 
+export async function login(username: string, password: string): Promise<void> {
+  const params = new URLSearchParams()
+  params.append('username', username)
+  params.append('password', password)
 
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params
+  })
+
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}))
+    throw new Error(detail.detail || `Đăng nhập thất bại (${res.status})`)
+  }
+
+  const data = await res.json()
+  if (!data.access_token) {
+    throw new Error('Server không trả về token hợp lệ.')
+  }
+  localStorage.setItem('drs_token', data.access_token)
+}
+
+export async function register(username: string, password: string, email?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, email: email || null })
+  })
+
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}))
+    throw new Error(detail.detail || `Đăng ký thất bại (${res.status})`)
+  }
+}
 

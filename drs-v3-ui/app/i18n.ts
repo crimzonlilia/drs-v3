@@ -135,7 +135,8 @@ const translations = {
     stepDraft: 'Draft',
     stepReview: 'Review',
     stepApprove: 'Approve',
-    stepRender: 'Render'
+    stepRender: 'Render',
+    chapterSummaryTitle: 'Chapter Summary'
   },
   vi: {
     dashboardTitle: 'DRS v3 - Quản lý Dự án',
@@ -213,7 +214,7 @@ const translations = {
     logout: 'Đăng xuất',
     themeLight: 'Giao diện sáng',
     themeDark: 'Giao diện tối',
-
+    
     // New translation keys
     deleteDocConfirm: 'Bạn có chắc chắn muốn xóa tài liệu này không? Thao tác này sẽ xóa vĩnh viễn dữ liệu trên hệ thống.',
     deleteDocSuccess: 'Đã xóa tài liệu thành công.',
@@ -267,7 +268,8 @@ const translations = {
     stepDraft: 'Dịch nháp',
     stepReview: 'Chỉnh sửa',
     stepApprove: 'Phê duyệt',
-    stepRender: 'Xuất ảnh'
+    stepRender: 'Xuất ảnh',
+    chapterSummaryTitle: 'Tóm tắt chương'
   }
 }
 

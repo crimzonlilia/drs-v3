@@ -102,6 +102,7 @@ class GlossaryAddInput(BaseModel):
     source_lang: str
     target_lang: str
     context_note: Optional[str] = ""
+    old_source_term: Optional[str] = None
 
 
 class EntityAddInput(BaseModel):
@@ -113,6 +114,7 @@ class EntityAddInput(BaseModel):
     target_lang: str
     pronouns: Optional[str] = ""
     notes: Optional[str] = ""
+    old_entity_id: Optional[str] = None
 
 
 class StyleRuleAddInput(BaseModel):
@@ -123,6 +125,16 @@ class StyleRuleAddInput(BaseModel):
     example_after: Optional[str] = ""
     source_lang: Optional[str] = ""
     target_lang: Optional[str] = ""
+    old_rule_id: Optional[str] = None
+
+
+class ProjectUpdate(BaseModel):
+    display_name: str
+    description: Optional[str] = ""
+
+
+class DocumentRename(BaseModel):
+    new_doc_id: str
 
 
 class ChatRequest(BaseModel):

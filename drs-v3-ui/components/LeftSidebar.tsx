@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { showToast } from './toast'
-import { FileText, PanelLeft, Plus, Trash2, UploadCloud } from 'lucide-react'
-import { listChapters, deleteChapter, saveChapter, uploadTextBulk, getChapter } from '@/app/api-client'
+import { FileText, PanelLeft, Plus, Trash2, UploadCloud, Edit3 } from 'lucide-react'
+import { listChapters, deleteChapter, saveChapter, uploadTextBulk, getChapter, renameDocument } from '@/app/api-client'
 import { useLanguage } from '@/app/i18n'
 
 interface LeftSidebarProps {
@@ -27,6 +27,43 @@ export default function LeftSidebar({
   const [fileList, setFileList] = useState<string[]>([])
   const [chapterTitles, setChapterTitles] = useState<Record<string, string>>({})
   const { language, t } = useLanguage()
+
+  const handleRenameFile = async (filename: string) => {
+    const newName = prompt(t('newDocPrompt') || 'Nhập tên tài liệu mới:', filename)
+    if (!newName || !newName.trim() || newName.trim() === filename) return
+    const cleanNewName = newName.trim().endsWith('.md') ? newName.trim() : `${newName.trim()}.md`
+    
+    if (fileList.some(f => f.toLowerCase() === cleanNewName.toLowerCase() && f !== filename)) {
+      showToast(t('docExists') || 'Tài liệu với tên đó đã tồn tại.', 'warning')
+      return
+    }
+
+    try {
+      await renameDocument(projectId, filename, cleanNewName)
+      
+      const newList = fileList.map(f => f === filename ? cleanNewName : f)
+      setFileList(newList)
+      
+      if (activeFile === filename) {
+        onFileSelect(cleanNewName)
+        if (typeof window !== 'undefined') {
+          const newPath = window.location.pathname.replace(encodeURIComponent(filename), encodeURIComponent(cleanNewName))
+          window.history.replaceState(null, '', newPath)
+        }
+      }
+      
+      showToast('Đổi tên tài liệu thành công!', 'success')
+      
+      const titles = { ...chapterTitles }
+      if (titles[filename]) {
+        titles[cleanNewName] = titles[filename]
+        delete titles[filename]
+        setChapterTitles(titles)
+      }
+    } catch (err: any) {
+      showToast(`Lỗi khi đổi tên tài liệu: ${err.message}`, 'error')
+    }
+  }
 
   const formatDoc = (ch: string) => {
     if (!ch) return ''
@@ -227,16 +264,28 @@ export default function LeftSidebar({
                   <FileText size={14} className="shrink-0" />
                   <span className="truncate text-sm">{formatDoc(file)}</span>
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleDeleteFile(file)
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-all shrink-0"
-                  title={t('deleteDoc')}
-                >
-                  <Trash2 size={13} />
-                </button>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleRenameFile(file)
+                    }}
+                    className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"
+                    title="Đổi tên tài liệu"
+                  >
+                    <Edit3 size={13} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteFile(file)
+                    }}
+                    className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-all"
+                    title={t('deleteDoc')}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             )
           })}

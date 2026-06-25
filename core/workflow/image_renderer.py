@@ -60,19 +60,34 @@ def mask_original_text_block_background(
     px_min: int,
     py_min: int,
     px_max: int,
-    py_max: int
+    py_max: int,
+    bubble_type: str = "normal"
 ) -> None:
     """
     Function for background masking.
-    Currently it uses standard masking (solid white ellipse inside boundaries).
-    Later, we can integrate OpenCV inpainting or LaMa-based models here.
+    Uses 0.95 scale mapping to clean up 100% of Japanese text near margins.
+    Uses rectangular masking for narration and scream types, elliptical for others.
     """
     draw = ImageDraw.Draw(img)
-    inset = 3
-    draw.ellipse(
-        [px_min + inset, py_min + inset, px_max - inset, py_max - inset],
-        fill="white"
-    )
+    box_w = px_max - px_min
+    box_h = py_max - py_min
+    center_x = px_min + box_w / 2
+    center_y = py_min + box_h / 2
+    
+    scaled_w = box_w * 0.95
+    scaled_h = box_h * 0.95
+    
+    coords = [
+        center_x - scaled_w / 2,
+        center_y - scaled_h / 2,
+        center_x + scaled_w / 2,
+        center_y + scaled_h / 2
+    ]
+    
+    if bubble_type in ("narration", "scream"):
+        draw.rectangle(coords, fill="white")
+    else:
+        draw.ellipse(coords, fill="white")
 
 
 def wrap_text(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, max_width: float) -> list[str]:
@@ -114,6 +129,84 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, max
     return lines
 
 
+def wrap_ellipse(
+    words: list[str],
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    box_w: float,
+    box_h: float,
+    line_height: float,
+    scale: float = 0.72
+) -> list[str] | None:
+    """
+    Wrap words into lines dynamically fitting within an ellipse shape.
+    Calculates vertical offset and allowed horizontal width for each line.
+    """
+    import math
+    # Use the scaled semi-axes so the text ellipse is geometrically consistent
+    # with the 70% fill constraint applied in both axes
+    a = box_w * scale / 2.0  # horizontal semi-axis of the text ellipse
+    b = box_h * scale / 2.0  # vertical semi-axis of the text ellipse
+    if b <= 0:
+        return None
+        
+    num_words = len(words)
+    if num_words == 0:
+        return []
+
+    # Try to wrap in N lines, from 1 to 15
+    for N in range(1, 16):
+        total_h = N * line_height
+        if total_h > box_h * scale:
+            continue
+            
+        allowed_widths = []
+        valid_n = True
+        for i in range(N):
+            y_i = (i - (N - 1) / 2.0) * line_height
+            ratio = y_i / b
+            if abs(ratio) >= 1.0:
+                valid_n = False
+                break
+            # Width at this row = chord of the text ellipse at height y_i
+            allowed_widths.append(2.0 * a * math.sqrt(1.0 - ratio * ratio))
+            
+        if not valid_n:
+            continue
+            
+        lines = []
+        word_idx = 0
+        
+        for line_limit in allowed_widths:
+            if word_idx >= num_words:
+                break
+                
+            curr_line = [words[word_idx]]
+            word_idx += 1
+            
+            while word_idx < num_words:
+                next_word = words[word_idx]
+                test_line = " ".join(curr_line + [next_word])
+                try:
+                    line_w = font.getlength(test_line)
+                except AttributeError:
+                    try:
+                        line_w = font.getmask(test_line).size[0]
+                    except Exception:
+                        line_w = len(test_line) * (font.size * 0.6 if hasattr(font, 'size') else 8)
+                        
+                if line_w <= line_limit:
+                    curr_line.append(next_word)
+                    word_idx += 1
+                else:
+                    break
+            lines.append(" ".join(curr_line))
+            
+        if word_idx == num_words:
+            return lines
+            
+    return None
+
+
 def render_image_layout_page(
     image_bytes: bytes,
     blocks: list[LayoutTextBlock],
@@ -141,28 +234,65 @@ def render_image_layout_page(
         box_w = px_max - px_min
         box_h = py_max - py_min
         
+        bubble_type = getattr(b, 'bubble_type', 'normal')
+        
         # 1. Clean the original text block area
-        mask_original_text_block_background(img, px_min, py_min, px_max, py_max)
+        mask_original_text_block_background(img, px_min, py_min, px_max, py_max, bubble_type)
         
-        # 2. Determine font size based on block size
-        font_size = max(11, min(24, int(box_w / 8)))
-        font = get_vietnamese_font(font_size, getattr(b, 'bubble_type', 'normal'))
-        
-        # Wrap text (leave margin inside block)
-        margin = max(10, int(box_w * 0.15))
-        max_text_w = box_w - (margin * 2)
-        lines = wrap_text(b.translated_text, font, max_text_w)
-        
-        # Calculate vertical centering
-        try:
-            line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + 4
-        except AttributeError:
-            line_height = font.size + 4 if hasattr(font, 'size') else 20
+        # 2. Determine font size dynamically using auto-scaling
+        words = b.translated_text.split()
+        if not words:
+            continue
             
-        total_text_h = len(lines) * line_height
+        is_oval = bubble_type in ('normal', 'thought')
+        font_size = 24  # Start with comfortable max size
+        font = None
+        lines = []
+        line_height = 20
+        
+        while font_size >= 9:
+            font = get_vietnamese_font(font_size, bubble_type)
+            try:
+                line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + 4
+            except AttributeError:
+                line_height = font.size + 4 if hasattr(font, 'size') else 20
+                
+            if is_oval:
+                res = wrap_ellipse(words, font, box_w, box_h, line_height, scale=0.72)
+                if res is not None:
+                    lines = res
+                    break
+            else:
+                max_text_w = box_w * 0.72
+                res_lines = wrap_text(b.translated_text, font, max_text_w)
+                total_text_h = len(res_lines) * line_height
+                if total_text_h <= box_h * 0.72:
+                    lines = res_lines
+                    break
+            font_size -= 1
+            
+        if not lines:
+            # Heuristic fallback if it doesn't fit
+            font_size = 9
+            font = get_vietnamese_font(font_size, bubble_type)
+            try:
+                line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + 4
+            except AttributeError:
+                line_height = font.size + 4 if hasattr(font, 'size') else 20
+            lines = wrap_text(b.translated_text, font, box_w * 0.85)
+            
+        # 3. Calculate vertical alignment with dynamic line spacing
+        extra_spacing = 0
+        if len(lines) > 1:
+            leftover_h = (box_h * 0.72) - (len(lines) * line_height)
+            if leftover_h > 0:
+                # Distribute extra spacing evenly between lines, capped at 40% of line height
+                extra_spacing = min(line_height * 0.4, leftover_h / (len(lines) - 1))
+                
+        total_text_h = len(lines) * line_height + (len(lines) - 1) * extra_spacing
         start_y = py_min + (box_h - total_text_h) / 2
         
-        # Draw each line centered horizontally
+        # 4. Draw each line centered horizontally
         for i, line in enumerate(lines):
             try:
                 line_w = font.getlength(line)
@@ -174,7 +304,7 @@ def render_image_layout_page(
                     
             start_x = px_min + (box_w - line_w) / 2
             draw.text(
-                (start_x, start_y + i * line_height),
+                (start_x, start_y + i * (line_height + extra_spacing)),
                 line,
                 font=font,
                 fill="black"
